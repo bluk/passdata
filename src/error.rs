@@ -10,6 +10,8 @@ use alloc::boxed::Box;
 #[cfg(feature = "std")]
 use std::{boxed::Box, error};
 
+use crate::utils::QueryResultError;
+
 /// Alias for a [`Result`][result::Result] with an [Error] error type.
 pub type Result<T> = result::Result<T, Error>;
 
@@ -47,6 +49,12 @@ impl fmt::Debug for Error {
     }
 }
 
+impl From<QueryResultError> for Error {
+    fn from(value: QueryResultError) -> Self {
+        Self::with_kind(ErrorKind::QueryResultError(value))
+    }
+}
+
 struct ErrorImpl {
     kind: ErrorKind,
 }
@@ -74,6 +82,8 @@ pub(crate) enum ErrorKind {
     InvalidStringId,
     /// Cannot convert to a scalar ID
     InvalidScalarId,
+    /// Query result error
+    QueryResultError(QueryResultError),
 }
 
 #[cfg(feature = "std")]
@@ -84,6 +94,7 @@ impl error::Error for ErrorKind {
             | ErrorKind::InvalidNumId
             | ErrorKind::InvalidStringId
             | ErrorKind::InvalidScalarId => None,
+            ErrorKind::QueryResultError(e) => Some(e),
         }
     }
 }
@@ -95,6 +106,7 @@ impl Display for ErrorKind {
             ErrorKind::InvalidNumId => f.write_str("should be a number reference ID"),
             ErrorKind::InvalidStringId => f.write_str("should be a string reference ID"),
             ErrorKind::InvalidScalarId => f.write_str("should be a scalar reference ID"),
+            ErrorKind::QueryResultError(e) => Display::fmt(e, f),
         }
     }
 }
@@ -106,6 +118,7 @@ impl fmt::Debug for ErrorKind {
             ErrorKind::InvalidNumId => f.write_str("should be a number reference ID"),
             ErrorKind::InvalidStringId => f.write_str("should be a string reference ID"),
             ErrorKind::InvalidScalarId => f.write_str("should be a scalar reference ID"),
+            ErrorKind::QueryResultError(e) => fmt::Debug::fmt(e, f),
         }
     }
 }

@@ -12,8 +12,9 @@
 
 #[cfg(all(feature = "alloc", not(feature = "std")))]
 use alloc::{borrow::Cow, string::String, vec::Vec};
+use core::fmt;
 #[cfg(feature = "std")]
-use std::{borrow::Cow, string::String, vec::Vec};
+use std::{borrow::Cow, error, string::String, vec::Vec};
 
 use crate::error::{Error, ErrorKind, Result};
 
@@ -134,7 +135,7 @@ impl TryFrom<ConstantId> for ScalarId {
 
 /// A constant reference
 #[derive(Debug, Default, Clone, Copy, Hash, PartialEq, Eq)]
-pub(crate) struct ConstantId(pub(crate) u16);
+pub struct ConstantId(pub(crate) u16);
 
 impl From<bool> for ConstantId {
     fn from(value: bool) -> Self {
@@ -159,6 +160,109 @@ impl From<StringId> for ConstantId {
 impl From<ScalarId> for ConstantId {
     fn from(value: ScalarId) -> Self {
         Self(value.0)
+    }
+}
+
+/// A constant value.
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub enum Constant<'a> {
+    /// Boolean
+    Bool(bool),
+    /// Number
+    Num(i64),
+    /// String
+    String(Cow<'a, str>),
+}
+
+impl<'a> Default for Constant<'a> {
+    fn default() -> Self {
+        Self::Bool(false)
+    }
+}
+
+impl<'a> From<bool> for Constant<'a> {
+    fn from(value: bool) -> Self {
+        Constant::Bool(value)
+    }
+}
+
+impl<'a> From<i64> for Constant<'a> {
+    fn from(value: i64) -> Self {
+        Constant::Num(value)
+    }
+}
+
+impl<'a> From<&'a str> for Constant<'a> {
+    fn from(value: &'a str) -> Self {
+        Constant::String(Cow::from(value))
+    }
+}
+
+impl<'a> From<String> for Constant<'a> {
+    fn from(value: String) -> Self {
+        Constant::String(Cow::from(value))
+    }
+}
+
+impl<'a> From<Cow<'a, str>> for Constant<'a> {
+    fn from(value: Cow<'a, str>) -> Self {
+        Constant::String(value)
+    }
+}
+
+/// Cannot convert constant value to type.
+#[derive(Clone, Copy)]
+pub struct InvalidType;
+
+#[cfg(feature = "std")]
+impl error::Error for InvalidType {
+    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
+        None
+    }
+}
+
+impl fmt::Display for InvalidType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("invalid type")
+    }
+}
+
+impl fmt::Debug for InvalidType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("invalid type")
+    }
+}
+
+impl<'a> TryFrom<Constant<'a>> for Cow<'a, str> {
+    type Error = InvalidType;
+
+    fn try_from(value: Constant<'a>) -> core::result::Result<Self, Self::Error> {
+        match value {
+            Constant::Bool(_) | Constant::Num(_) => Err(InvalidType),
+            Constant::String(s) => Ok(s),
+        }
+    }
+}
+
+impl<'a> TryFrom<Constant<'a>> for i64 {
+    type Error = InvalidType;
+
+    fn try_from(value: Constant<'a>) -> core::result::Result<Self, Self::Error> {
+        match value {
+            Constant::Bool(_) | Constant::String(_) => Err(InvalidType),
+            Constant::Num(n) => Ok(n),
+        }
+    }
+}
+
+impl<'a> TryFrom<Constant<'a>> for bool {
+    type Error = InvalidType;
+
+    fn try_from(value: Constant<'a>) -> core::result::Result<Self, Self::Error> {
+        match value {
+            Constant::Bool(b) => Ok(b),
+            Constant::Num(_) | Constant::String(_) => Err(InvalidType),
+        }
     }
 }
 
@@ -241,5 +345,31 @@ impl Context {
                         .expect("greater than u16::MAX numbers in context"),
             )
         }
+    }
+
+    /// Returns the value given the context.
+    pub(crate) fn constant<T>(&self, id: T) -> Constant<'_>
+    where
+        ConstantId: From<T>,
+    {
+        let id = ConstantId::from(id);
+
+        let Ok(id) = ScalarId::try_from(id) else {
+            panic!()
+        };
+
+        if let Ok(value) = <bool>::try_from(id) {
+            return Constant::Bool(value);
+        }
+
+        if let Ok(id) = <NumId>::try_from(id) {
+            return Constant::Num(self.num(id));
+        }
+
+        if let Ok(id) = <StringId>::try_from(id) {
+            return Constant::String(Cow::from(self.str(id)));
+        }
+
+        panic!()
     }
 }
