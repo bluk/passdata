@@ -72,15 +72,18 @@ pub(crate) enum ErrorKind {
     InvalidNumId,
     /// Cannot convert to a string ID
     InvalidStringId,
+    /// Cannot convert to a scalar ID
+    InvalidScalarId,
 }
 
 #[cfg(feature = "std")]
 impl error::Error for ErrorKind {
     fn source(&self) -> Option<&(dyn error::Error + 'static)> {
         match self {
-            ErrorKind::InvalidBoolValue | ErrorKind::InvalidNumId | ErrorKind::InvalidStringId => {
-                None
-            }
+            ErrorKind::InvalidBoolValue
+            | ErrorKind::InvalidNumId
+            | ErrorKind::InvalidStringId
+            | ErrorKind::InvalidScalarId => None,
         }
     }
 }
@@ -91,6 +94,7 @@ impl Display for ErrorKind {
             ErrorKind::InvalidBoolValue => f.write_str("should be a boolean reference"),
             ErrorKind::InvalidNumId => f.write_str("should be a number reference ID"),
             ErrorKind::InvalidStringId => f.write_str("should be a string reference ID"),
+            ErrorKind::InvalidScalarId => f.write_str("should be a scalar reference ID"),
         }
     }
 }
@@ -101,6 +105,7 @@ impl fmt::Debug for ErrorKind {
             ErrorKind::InvalidBoolValue => f.write_str("should be a boolean reference"),
             ErrorKind::InvalidNumId => f.write_str("should be a number reference ID"),
             ErrorKind::InvalidStringId => f.write_str("should be a string reference ID"),
+            ErrorKind::InvalidScalarId => f.write_str("should be a scalar reference ID"),
         }
     }
 }

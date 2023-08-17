@@ -29,6 +29,11 @@ const NUMBER_INDEX_RANGE: core::ops::RangeInclusive<u16> =
     NUMBER_START_INDEX..=NUMBER_INCLUSIVE_END_INDEX;
 
 #[inline]
+fn is_bool_ref(value: u16) -> bool {
+    value == BOOL_FALSE_INDEX || value == BOOL_TRUE_INDEX
+}
+
+#[inline]
 fn is_string_ref(value: u16) -> bool {
     STRING_INDEX_RANGE.contains(&value)
 }
@@ -38,13 +43,54 @@ fn is_number_ref(value: u16) -> bool {
     NUMBER_INDEX_RANGE.contains(&value)
 }
 
+#[inline]
+fn is_scalar_ref(value: u16) -> bool {
+    is_bool_ref(value) || is_string_ref(value) || is_number_ref(value)
+}
+
+impl TryFrom<ScalarId> for bool {
+    type Error = Error;
+
+    fn try_from(value: ScalarId) -> Result<Self> {
+        match value.0 {
+            BOOL_FALSE_INDEX => Ok(false),
+            BOOL_TRUE_INDEX => Ok(true),
+            _ => Err(Error::with_kind(ErrorKind::InvalidBoolValue)),
+        }
+    }
+}
+
 /// An interned string ID reference.
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct StringId(pub(crate) u16);
 
+impl TryFrom<ScalarId> for StringId {
+    type Error = Error;
+
+    fn try_from(value: ScalarId) -> Result<Self> {
+        if is_string_ref(value.0) {
+            Ok(StringId(value.0))
+        } else {
+            Err(Error::with_kind(ErrorKind::InvalidStringId))
+        }
+    }
+}
+
 /// An interned number reference.
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct NumId(pub(crate) u16);
+
+impl TryFrom<ScalarId> for NumId {
+    type Error = Error;
+
+    fn try_from(value: ScalarId) -> Result<Self> {
+        if is_number_ref(value.0) {
+            Ok(NumId(value.0))
+        } else {
+            Err(Error::with_kind(ErrorKind::InvalidNumId))
+        }
+    }
+}
 
 /// A scalar reference.
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
@@ -74,39 +120,15 @@ impl From<StringId> for ScalarId {
     }
 }
 
-impl TryFrom<ScalarId> for bool {
+impl TryFrom<ConstantId> for ScalarId {
     type Error = Error;
 
-    fn try_from(value: ScalarId) -> Result<Self> {
-        match value.0 {
-            BOOL_FALSE_INDEX => Ok(false),
-            BOOL_TRUE_INDEX => Ok(true),
-            _ => Err(Error::with_kind(ErrorKind::InvalidBoolValue)),
+    fn try_from(value: ConstantId) -> Result<Self> {
+        if is_scalar_ref(value.0) {
+            return Ok(ScalarId(value.0));
         }
-    }
-}
 
-impl TryFrom<ScalarId> for NumId {
-    type Error = Error;
-
-    fn try_from(value: ScalarId) -> Result<Self> {
-        if is_number_ref(value.0) {
-            Ok(NumId(value.0))
-        } else {
-            Err(Error::with_kind(ErrorKind::InvalidNumId))
-        }
-    }
-}
-
-impl TryFrom<ScalarId> for StringId {
-    type Error = Error;
-
-    fn try_from(value: ScalarId) -> Result<Self> {
-        if is_string_ref(value.0) {
-            Ok(StringId(value.0))
-        } else {
-            Err(Error::with_kind(ErrorKind::InvalidStringId))
-        }
+        Err(Error::with_kind(ErrorKind::InvalidScalarId))
     }
 }
 

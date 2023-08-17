@@ -17,6 +17,7 @@ include = [
 ]
 
 [dependencies]
+generic-array = "0.14.7"
 
 [features]
 default = ["std"]

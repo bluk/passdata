@@ -20,4 +20,5 @@
 extern crate alloc;
 
 pub mod error;
+pub(crate) mod facts;
 pub(crate) mod values;
