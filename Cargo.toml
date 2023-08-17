@@ -1,0 +1,30 @@
+[package]
+name = "passdata"
+version = "0.0.1"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+authors = ["Bryant Luk <code@bryantluk.com>"]
+description = "Authentication and authorization data in a logic programming language."
+repository = "https://github.com/bluk/passdata"
+documentation = "https://docs.rs/passdata/"
+readme = "README.md"
+include = [
+  "src/**/*.rs",
+  "Cargo.toml",
+  "README.md",
+  "LICENSE-APACHE",
+  "LICENSE-MIT",
+]
+
+[dependencies]
+
+[features]
+default = ["std"]
+
+std = []
+
+alloc = []
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
