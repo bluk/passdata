@@ -228,8 +228,13 @@ mod tests {
         data.add_fact("a", true);
         data.add_fact("b", ("xyz", 1234, false));
         data.add_fact("b", ("xyz", 5678, true));
+        data.add_fact("c", 1234);
+        data.add_fact("d", "xyz");
 
         assert_eq!(data.query_only_one_edb("a", (true,)), Ok(Some((true,))));
+        assert_eq!(data.query_only_one_edb("a", true), Ok(Some(true)));
+        assert_eq!(data.query_only_one_edb("a", AnyBool), Ok(Some(true)));
+
         assert_eq!(
             data.query_only_one_edb("b", ("xyz", 1234, false)),
             Ok(Some(("xyz".into(), 1234, false)))
@@ -242,5 +247,12 @@ mod tests {
             data.query_only_one_edb("b", ("xyz", AnyNum, AnyBool)),
             Err(Error::with_kind(ErrorKind::MultipleMatchingFacts))
         );
+
+        assert_eq!(data.query_only_one_edb("c", AnyNum), Ok(Some(1234)));
+        assert_eq!(data.query_only_one_edb("c", 5678), Ok(None));
+
+        assert_eq!(data.query_only_one_edb("d", AnyStr), Ok(Some("xyz".into())));
+        assert_eq!(data.query_only_one_edb("d", "abc"), Ok(None));
+        assert_eq!(data.query_only_one_edb("d", "xyz"), Ok(Some("xyz".into())));
     }
 }

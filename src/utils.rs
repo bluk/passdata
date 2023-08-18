@@ -36,7 +36,6 @@ pub trait IntoArray<T>: Sized {
 
 macro_rules! impl_into_array_single_ty {
     ($i0:ty) => {
-        #[allow(unused_parens)]
         impl<'a> IntoArray<values::Constant<'a>> for $i0
         {
             type Length = U1;
@@ -60,7 +59,6 @@ macro_rules! impl_into_array_tuple {
     ($i0:ident, $($I:ident),+) => {
         impl_into_array_tuple!($($I),+);
 
-        #[allow(unused_parens)]
         impl<T, $($I),+> IntoArray<T> for ($($I,)+)
             where $(T: From<$I>,)+
         {
@@ -229,12 +227,39 @@ where
     ) -> Result<Self::ResultTy, QueryResultError>;
 }
 
+impl<'a, T> QueryResult<'a> for T
+where
+    T::Ty<'a>: TryFrom<values::Constant<'a>, Error = InvalidType>,
+    T: QueryValue,
+{
+    type Length = U1;
+
+    type ResultTy = T::Ty<'a>;
+
+    fn is_match(&self, other: &Self::ResultTy) -> bool {
+        self.is_match(other)
+    }
+
+    fn into_tuple(
+        values: GenericArray<values::Constant<'a>, Self::Length>,
+    ) -> Result<Self::ResultTy, QueryResultError> {
+        let mut iter = values.into_iter();
+
+        let t = <T::Ty<'a>>::try_from(iter.next().ok_or(QueryResultError::MissingElement)?)?;
+
+        if iter.next().is_some() {
+            return Err(QueryResultError::InvalidLength);
+        }
+
+        Ok(t)
+    }
+}
+
 macro_rules! impl_query_result {
     ($i0:ident) => {};
     ($i0:ident, $($I:ident),+) => {
         impl_query_result!($($I),+);
 
-        #[allow(unused_parens)]
         impl<'a, $($I),+> QueryResult<'a> for ($($I,)+)
             where $($I::Ty<'a> : TryFrom<values::Constant<'a>, Error = InvalidType>),+,
             $($I: QueryValue),+,
