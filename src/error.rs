@@ -87,6 +87,8 @@ pub(crate) enum ErrorKind {
     InvalidScalarId,
     /// Query result error
     QueryResultError(QueryResultError),
+    /// If there are multiple matching facts
+    MultipleMatchingFacts,
 }
 
 #[cfg(feature = "std")]
@@ -96,7 +98,8 @@ impl error::Error for ErrorKind {
             ErrorKind::InvalidBoolValue
             | ErrorKind::InvalidNumId
             | ErrorKind::InvalidStringId
-            | ErrorKind::InvalidScalarId => None,
+            | ErrorKind::InvalidScalarId
+            | ErrorKind::MultipleMatchingFacts => None,
             ErrorKind::QueryResultError(e) => Some(e),
         }
     }
@@ -109,6 +112,7 @@ impl Display for ErrorKind {
             ErrorKind::InvalidNumId => f.write_str("should be a number reference ID"),
             ErrorKind::InvalidStringId => f.write_str("should be a string reference ID"),
             ErrorKind::InvalidScalarId => f.write_str("should be a scalar reference ID"),
+            ErrorKind::MultipleMatchingFacts => f.write_str("should be a single matching fact"),
             ErrorKind::QueryResultError(e) => Display::fmt(e, f),
         }
     }
@@ -121,6 +125,7 @@ impl fmt::Debug for ErrorKind {
             ErrorKind::InvalidNumId => f.write_str("should be a number reference ID"),
             ErrorKind::InvalidStringId => f.write_str("should be a string reference ID"),
             ErrorKind::InvalidScalarId => f.write_str("should be a scalar reference ID"),
+            ErrorKind::MultipleMatchingFacts => f.write_str("should be a single matching fact"),
             ErrorKind::QueryResultError(e) => fmt::Debug::fmt(e, f),
         }
     }

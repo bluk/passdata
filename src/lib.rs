@@ -23,6 +23,7 @@ extern crate alloc;
 #[cfg(all(feature = "alloc", not(feature = "std")))]
 use alloc::borrow::Cow;
 use core::iter;
+use error::ErrorKind;
 #[cfg(feature = "std")]
 use std::borrow::Cow;
 
@@ -136,6 +137,35 @@ impl Passdata {
     {
         self.query_edb(pred, values).any(|v| v.is_ok())
     }
+
+    /// Queries the data for an explicitly declared fact, and only returns a
+    /// success if there is a single matching fact.
+    ///
+    /// # Errors
+    ///
+    /// - If the expected types are not compatible with the types in the data.
+    /// - If there are multiple matching facts
+    pub fn query_only_one_edb<'a, T>(&'a self, pred: &str, values: T) -> Result<Option<T::ResultTy>>
+    where
+        T: QueryResult<'a> + 'a,
+        <T as QueryResult<'a>>::Length: ArrayLength<ConstantId>,
+    {
+        let mut iter = self.query_edb(pred, values);
+        let Some(first) = iter.next() else {
+            return Ok(None);
+        };
+
+        match first {
+            Ok(first) => {
+                if iter.next().is_some() {
+                    return Err(Error::with_kind(ErrorKind::MultipleMatchingFacts));
+                }
+
+                Ok(Some(first))
+            }
+            Err(error) => Err(error),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -158,16 +188,16 @@ mod tests {
         data.add_fact("c", ["abc".into(), 7.into(), Constant::from(true)]);
 
         let mut y = data.query_edb("c", (AnyStr, AnyNum, AnyBool));
-        assert_eq!(y.next().unwrap().unwrap(), ("xyz".into(), 1234, false));
-        assert_eq!(y.next().unwrap().unwrap(), ("abc".into(), 7, true));
-        assert!(y.next().is_none());
+        assert_eq!(y.next(), Some(Ok(("xyz".into(), 1234, false))));
+        assert_eq!(y.next(), Some(Ok(("abc".into(), 7, true))));
+        assert_eq!(y.next(), None);
 
         let mut y = data.query_edb("c", ("xyz", 1234, false));
-        assert_eq!(y.next().unwrap().unwrap(), ("xyz".into(), 1234, false));
-        assert!(y.next().is_none());
+        assert_eq!(y.next(), Some(Ok(("xyz".into(), 1234, false))));
+        assert_eq!(y.next(), None);
 
         let mut y = data.query_edb("c", ("xyz", 7, AnyBool));
-        assert!(y.next().is_none());
+        assert_eq!(y.next(), None);
     }
 
     #[test]
@@ -189,5 +219,28 @@ mod tests {
         assert!(data.contains_edb("b", ("xyz", AnyNum, false)));
         assert!(!data.contains_edb("b", (AnyStr, 5678, false)));
         assert!(!data.contains_edb("b", (AnyStr, 1234, true)));
+    }
+
+    #[test]
+    fn query_only_one_edb() {
+        let mut data = Passdata::new();
+
+        data.add_fact("a", true);
+        data.add_fact("b", ("xyz", 1234, false));
+        data.add_fact("b", ("xyz", 5678, true));
+
+        assert_eq!(data.query_only_one_edb("a", (true,)), Ok(Some((true,))));
+        assert_eq!(
+            data.query_only_one_edb("b", ("xyz", 1234, false)),
+            Ok(Some(("xyz".into(), 1234, false)))
+        );
+        assert_eq!(
+            data.query_only_one_edb("b", ("xyz", 1234, AnyBool)),
+            Ok(Some(("xyz".into(), 1234, false)))
+        );
+        assert_eq!(
+            data.query_only_one_edb("b", ("xyz", AnyNum, AnyBool)),
+            Err(Error::with_kind(ErrorKind::MultipleMatchingFacts))
+        );
     }
 }
