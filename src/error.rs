@@ -16,6 +16,7 @@ use crate::utils::QueryResultError;
 pub type Result<T> = result::Result<T, Error>;
 
 /// Errors when evaluating a query.
+#[derive(PartialEq)]
 pub struct Error {
     inner: Box<ErrorImpl>,
 }
@@ -55,6 +56,7 @@ impl From<QueryResultError> for Error {
     }
 }
 
+#[derive(PartialEq)]
 struct ErrorImpl {
     kind: ErrorKind,
 }
@@ -73,6 +75,7 @@ impl fmt::Debug for ErrorImpl {
 
 /// All possible crate errors.
 #[allow(clippy::module_name_repetitions)]
+#[derive(PartialEq)]
 pub(crate) enum ErrorKind {
     /// Cannot convert to a bool
     InvalidBoolValue,

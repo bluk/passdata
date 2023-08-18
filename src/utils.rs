@@ -161,7 +161,7 @@ impl QueryValue for AnyStr {
 }
 
 /// Errors in converting to a tuple.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 pub enum QueryResultError {
     /// Missing an element for the tuple
     MissingElement,
