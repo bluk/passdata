@@ -127,6 +127,15 @@ impl Passdata {
             Some(Ok(res))
         }))
     }
+
+    /// Determines if there is any explicitly declared fact which matches the given parameters.
+    pub fn contains_edb<'a, T>(&'a self, pred: &str, values: T) -> bool
+    where
+        T: QueryResult<'a> + 'a,
+        <T as QueryResult<'a>>::Length: ArrayLength<ConstantId>,
+    {
+        self.query_edb(pred, values).any(|v| v.is_ok())
+    }
 }
 
 #[cfg(test)]
@@ -136,7 +145,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn interpreter_add_fact() {
+    fn query_edb() {
         let mut data = Passdata::new();
 
         data.add_fact("a", true);
@@ -159,5 +168,26 @@ mod tests {
 
         let mut y = data.query_edb("c", ("xyz", 7, AnyBool));
         assert!(y.next().is_none());
+    }
+
+    #[test]
+    fn contains_edb() {
+        let mut data = Passdata::new();
+
+        data.add_fact("a", true);
+        data.add_fact("b", ("xyz", 1234, false));
+        data.add_fact("b", ("xyz", 5678, true));
+
+        assert!(data.contains_edb("a", (true,)));
+        assert!(data.contains_edb("a", (AnyBool,)));
+        assert!(!data.contains_edb("a", (false,)));
+
+        assert!(!data.contains_edb("b", ("xyz", 5678, false)));
+        assert!(data.contains_edb("b", ("xyz", 5678, true)));
+        assert!(data.contains_edb("b", ("xyz", 5678, AnyBool)));
+
+        assert!(data.contains_edb("b", ("xyz", AnyNum, false)));
+        assert!(!data.contains_edb("b", (AnyStr, 5678, false)));
+        assert!(!data.contains_edb("b", (AnyStr, 1234, true)));
     }
 }
