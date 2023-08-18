@@ -41,6 +41,8 @@ use crate::{
     values::{Constant, ConstantId, Context, ScalarId},
 };
 
+pub use utils::{AnyBool, AnyNum, AnyStr};
+
 /// Data for the logic program.
 #[derive(Debug, Default)]
 pub struct Passdata {
