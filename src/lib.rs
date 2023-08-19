@@ -27,11 +27,12 @@ use core::iter;
 use std::borrow::Cow;
 
 use either::Either;
-use generic_array::{ArrayLength, GenericArray};
+use generic_array::{functional::FunctionalSequence, ArrayLength, GenericArray};
 use typenum::Unsigned;
 
 pub mod error;
 pub(crate) mod facts;
+pub(crate) mod schema;
 pub(crate) mod utils;
 pub(crate) mod values;
 
@@ -42,23 +43,27 @@ use crate::{
     values::{ConstantId, Context, ScalarId, StringId},
 };
 
+pub use schema::{ConstantTy, Schema};
 pub use utils::{AnyBool, AnyConstant, AnyNum, AnyStr};
 pub use values::Constant;
 
 /// Data for the logic program.
-#[derive(Debug, Default)]
-pub struct Passdata {
+#[derive(Debug)]
+pub struct Passdata<'s> {
+    /// The program's types
+    schema: &'s Schema<'s>,
     /// Values in context
     context: Context,
     /// Facts explictly added to the data
     edb: Facts,
 }
 
-impl Passdata {
+impl<'s> Passdata<'s> {
     /// Constructs with empty data.
     #[must_use]
-    pub fn new() -> Self {
+    pub fn new(schema: &'s Schema<'s>) -> Self {
         Self {
+            schema,
             context: Context::default(),
             edb: Facts::default(),
         }
@@ -72,16 +77,26 @@ impl Passdata {
     }
 
     /// Add a fact explicitly.
-    pub fn add_fact<'a, P, T>(&mut self, predicate: P, constants: T)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the values do not match the expected types for the predicate.
+    pub fn add_fact<'a, P, T>(&mut self, predicate: P, constants: T) -> Result<()>
     where
         P: Into<Cow<'a, str>>,
         T: IntoArray<Constant<'a>>,
+        <T as IntoArray<Constant<'a>>>::Length: ArrayLength<ConstantTy>,
         <T as IntoArray<Constant<'a>>>::Length: ArrayLength<ConstantId>,
     {
+        let predicate = predicate.into();
         let constants = constants.into_array();
+
+        let tys = constants.clone().map(ConstantTy::from);
+        self.schema.validate_tys(&predicate, &tys)?;
+
         let mut v: GenericArray<ConstantId, T::Length> = GenericArray::default();
 
-        let pred = PredicateId::from(self.context.get_or_insert_string_id(predicate.into()));
+        let pred = PredicateId::from(self.context.get_or_insert_string_id(predicate));
 
         for (idx, c) in constants.into_iter().enumerate() {
             v[idx] = match c {
@@ -92,6 +107,8 @@ impl Passdata {
         }
 
         self.edb.push(pred, v);
+
+        Ok(())
     }
 
     /// Query for an explictly declared fact.
@@ -101,21 +118,23 @@ impl Passdata {
     /// If the expected types are not compatible with the types in the data.
     pub fn query_edb<'a, T>(
         &'a self,
-        pred: &str,
+        predicate: &str,
         values: T,
-    ) -> impl Iterator<Item = Result<T::ResultTy>> + 'a
+    ) -> Result<impl Iterator<Item = T::ResultTy> + 'a>
     where
         T: QueryResult<'a> + 'a,
     {
-        let Some(pred) = self.context.string_id(pred).map(PredicateId::from) else {
-            return Either::Left(iter::empty());
+        self.schema.validate_tys(predicate, &T::tys())?;
+
+        let Some(pred) = self.context.string_id(predicate).map(PredicateId::from) else {
+            return Ok(Either::Left(iter::empty()));
         };
 
         let Some(iter) = self.edb.terms_iter(pred, T::Length::USIZE) else {
-            return Either::Left(iter::empty());
+            return Ok(Either::Left(iter::empty()));
         };
 
-        Either::Right(iter.filter_map(move |cs| {
+        Ok(Either::Right(iter.filter_map(move |cs| {
             let mut r = GenericArray::default();
             for (idx, v) in cs.iter().enumerate() {
                 r[idx] = self.context.constant(*v);
@@ -124,7 +143,7 @@ impl Passdata {
             let res = match T::into_tuple(r) {
                 Ok(res) => res,
                 Err(e) => {
-                    return Some(Err(Error::from(e)));
+                    unreachable!("{}", e)
                 }
             };
 
@@ -132,16 +151,21 @@ impl Passdata {
                 return None;
             }
 
-            Some(Ok(res))
-        }))
+            Some(res)
+        })))
     }
 
     /// Determines if there is any explicitly declared fact which matches the given parameters.
-    pub fn contains_edb<'a, T>(&'a self, pred: &str, values: T) -> bool
+    ///
+    /// # Errors
+    ///
+    /// If the expected types are not compatible with the types in the data.
+    pub fn contains_edb<'a, T>(&'a self, pred: &str, values: T) -> Result<bool>
     where
         T: QueryResult<'a> + 'a,
     {
-        self.query_edb(pred, values).any(|v| v.is_ok())
+        self.query_edb(pred, values)
+            .map(|mut values| values.next().is_some())
     }
 
     /// Queries the data for an explicitly declared fact, and only returns a
@@ -155,21 +179,16 @@ impl Passdata {
     where
         T: QueryResult<'a> + 'a,
     {
-        let mut iter = self.query_edb(pred, values);
+        let mut iter = self.query_edb(pred, values)?;
         let Some(first) = iter.next() else {
             return Ok(None);
         };
 
-        match first {
-            Ok(first) => {
-                if iter.next().is_some() {
-                    return Err(Error::with_kind(ErrorKind::MultipleMatchingFacts));
-                }
-
-                Ok(Some(first))
-            }
-            Err(error) => Err(error),
+        if iter.next().is_some() {
+            return Err(Error::with_kind(ErrorKind::MultipleMatchingFacts));
         }
+
+        Ok(Some(first))
     }
 }
 
@@ -185,73 +204,104 @@ mod tests {
     use crate::utils::{AnyBool, AnyNum, AnyStr};
 
     #[test]
-    fn query_edb() {
-        let mut data = Passdata::new();
+    fn query_edb() -> Result<()> {
+        let mut schema = Schema::default();
+        schema.insert_tys("a", &[ConstantTy::Bool])?;
+        schema.insert_tys("a2", &[ConstantTy::Num])?;
+        schema.insert_tys("a3", &[ConstantTy::String])?;
+        schema.insert_tys("a4", &[ConstantTy::String])?;
+        schema.insert_tys("b", &[ConstantTy::Num, ConstantTy::Num])?;
+        schema.insert_tys("b2", &[ConstantTy::Num, ConstantTy::Num])?;
+        schema.insert_tys(
+            "c",
+            &[ConstantTy::String, ConstantTy::Num, ConstantTy::Bool],
+        )?;
 
-        data.add_fact("a", true);
-        data.add_fact("a2", 1);
-        data.add_fact("a3", "xyz");
-        data.add_fact("a4", ["xyz"]);
-        data.add_fact("b", (1, 2));
-        data.add_fact("b2", [1, 2]);
-        data.add_fact("c", ("xyz", 1234, false));
-        data.add_fact("c", ["abc".into(), 7.into(), Constant::from(true)]);
+        let mut data = Passdata::new(&schema);
 
-        let mut y = data.query_edb("c", (AnyStr, AnyNum, AnyBool));
-        assert_eq!(y.next(), Some(Ok(("xyz".into(), 1234, false))));
-        assert_eq!(y.next(), Some(Ok(("abc".into(), 7, true))));
+        data.add_fact("a", true)?;
+        data.add_fact("a2", 1)?;
+        data.add_fact("a3", "xyz")?;
+        data.add_fact("a4", ["xyz"])?;
+        data.add_fact("b", (1, 2))?;
+        data.add_fact("b2", [1, 2])?;
+        data.add_fact("c", ("xyz", 1234, false))?;
+        data.add_fact("c", ["abc".into(), 7.into(), Constant::from(true)])?;
+
+        let mut y = data.query_edb("c", (AnyStr, AnyNum, AnyBool))?;
+        assert_eq!(y.next(), Some(("xyz".into(), 1234, false)));
+        assert_eq!(y.next(), Some(("abc".into(), 7, true)));
         assert_eq!(y.next(), None);
 
-        let mut y = data.query_edb("c", ("xyz", 1234, false));
-        assert_eq!(y.next(), Some(Ok(("xyz".into(), 1234, false))));
+        let mut y = data.query_edb("c", ("xyz", 1234, false))?;
+        assert_eq!(y.next(), Some(("xyz".into(), 1234, false)));
         assert_eq!(y.next(), None);
 
-        let mut y = data.query_edb("c", ("xyz", 7, AnyBool));
+        let mut y = data.query_edb("c", ("xyz", 7, AnyBool))?;
         assert_eq!(y.next(), None);
 
-        let mut y = data.query_edb("c", (AnyConstant, AnyConstant, AnyConstant));
-        assert_eq!(
-            y.next(),
-            Some(Ok(("xyz".into(), 1234.into(), false.into())))
-        );
-        assert_eq!(y.next(), Some(Ok(("abc".into(), 7.into(), true.into()))));
+        let mut y = data.query_edb("c", (AnyConstant, AnyConstant, AnyConstant))?;
+        assert_eq!(y.next(), Some(("xyz".into(), 1234.into(), false.into())));
+        assert_eq!(y.next(), Some(("abc".into(), 7.into(), true.into())));
         assert_eq!(y.next(), None);
 
-        let mut y = data.query_edb("c", ("abc", AnyConstant, AnyConstant));
-        assert_eq!(y.next(), Some(Ok(("abc".into(), 7.into(), true.into()))));
+        let mut y = data.query_edb("c", ("abc", AnyConstant, AnyConstant))?;
+        assert_eq!(y.next(), Some(("abc".into(), 7.into(), true.into())));
         assert_eq!(y.next(), None);
+
+        Ok(())
     }
 
     #[test]
-    fn contains_edb() {
-        let mut data = Passdata::new();
+    fn contains_edb() -> Result<()> {
+        let mut schema = Schema::new();
+        schema.insert_tys("a", &[ConstantTy::Bool])?;
+        schema.insert_tys(
+            "b",
+            &[ConstantTy::String, ConstantTy::Num, ConstantTy::Bool],
+        )?;
 
-        data.add_fact("a", true);
-        data.add_fact("b", ("xyz", 1234, false));
-        data.add_fact("b", ("xyz", 5678, true));
+        let mut data = Passdata::new(&schema);
 
-        assert!(data.contains_edb("a", (true,)));
-        assert!(data.contains_edb("a", (AnyBool,)));
-        assert!(!data.contains_edb("a", (false,)));
+        data.add_fact("a", true)?;
+        data.add_fact("b", ("xyz", 1234, false))?;
+        data.add_fact("b", ("xyz", 5678, true))?;
 
-        assert!(!data.contains_edb("b", ("xyz", 5678, false)));
-        assert!(data.contains_edb("b", ("xyz", 5678, true)));
-        assert!(data.contains_edb("b", ("xyz", 5678, AnyBool)));
+        assert!(data.contains_edb("a", (true,))?);
+        assert!(data.contains_edb("a", (AnyBool,))?);
+        assert!(!data.contains_edb("a", (false,))?);
 
-        assert!(data.contains_edb("b", ("xyz", AnyNum, false)));
-        assert!(!data.contains_edb("b", (AnyStr, 5678, false)));
-        assert!(!data.contains_edb("b", (AnyStr, 1234, true)));
+        assert!(!data.contains_edb("b", ("xyz", 5678, false))?);
+        assert!(data.contains_edb("b", ("xyz", 5678, true))?);
+        assert!(data.contains_edb("b", ("xyz", 5678, AnyBool))?);
+
+        assert!(data.contains_edb("b", ("xyz", AnyNum, false))?);
+        assert!(!data.contains_edb("b", (AnyStr, 5678, false))?);
+        assert!(!data.contains_edb("b", (AnyStr, 1234, true))?);
+
+        Ok(())
+    }
+
+    lazy_static::lazy_static! {
+        static ref QUERY_ONLY_ONE_EDB_SCHEMA: Schema<'static> = {
+            let mut schema = Schema::new();
+            schema.insert_tys("a", &[ConstantTy::Bool]).unwrap();
+            schema.insert_tys("b", &[ConstantTy::String, ConstantTy::Num, ConstantTy::Bool]).unwrap();
+            schema.insert_tys("c", &[ConstantTy::Num]).unwrap();
+            schema.insert_tys("d", &[ConstantTy::String]).unwrap();
+            schema
+        };
     }
 
     #[test]
-    fn query_only_one_edb() {
-        let mut data = Passdata::new();
+    fn query_only_one_edb() -> Result<()> {
+        let mut data = Passdata::new(&QUERY_ONLY_ONE_EDB_SCHEMA);
 
-        data.add_fact("a", true);
-        data.add_fact("b", ("xyz", 1234, false));
-        data.add_fact("b", ("xyz", 5678, true));
-        data.add_fact("c", 1234);
-        data.add_fact("d", "xyz");
+        data.add_fact("a", true)?;
+        data.add_fact("b", ("xyz", 1234, false))?;
+        data.add_fact("b", ("xyz", 5678, true))?;
+        data.add_fact("c", 1234)?;
+        data.add_fact("d", "xyz")?;
 
         assert_eq!(data.query_only_one_edb("a", (true,)), Ok(Some((true,))));
         assert_eq!(data.query_only_one_edb("a", true), Ok(Some(true)));
@@ -285,5 +335,88 @@ mod tests {
             data.query_only_one_edb("d", AnyConstant),
             Ok(Some("xyz".into()))
         );
+
+        Ok(())
+    }
+
+    #[test]
+    fn missing_predicate_schema_errors() {
+        let schema = Schema::new();
+        let mut data = Passdata::new(&schema);
+
+        let error = match data.query_edb("c", ("abc", AnyConstant, AnyConstant)) {
+            Ok(_) => panic!("should have had a schema error"),
+            Err(e) => e,
+        };
+        assert!(error.is_schema_error());
+
+        let error = data.add_fact("a", true).unwrap_err();
+        assert!(error.is_schema_error());
+
+        let error = data.contains_edb("a", (true,)).unwrap_err();
+        assert!(error.is_schema_error());
+
+        let error = data.query_only_one_edb("a", AnyBool).unwrap_err();
+        assert!(error.is_schema_error());
+    }
+
+    #[test]
+    fn unexpected_predicate_tys_length_schema_errors() -> Result<()> {
+        let mut schema = Schema::new();
+        schema.insert_tys("a", &[ConstantTy::Bool])?;
+        schema.insert_tys(
+            "b",
+            &[ConstantTy::String, ConstantTy::Num, ConstantTy::Bool],
+        )?;
+
+        let mut data = Passdata::new(&schema);
+
+        let error = match data.query_edb("b", (AnyConstant, AnyConstant)) {
+            Ok(_) => panic!("should have had a schema error"),
+            Err(e) => e,
+        };
+        assert!(error.is_schema_error());
+
+        let error = data.add_fact("a", (true, 1)).unwrap_err();
+        assert!(error.is_schema_error());
+
+        let error = data.contains_edb("a", (true, AnyConstant)).unwrap_err();
+        assert!(error.is_schema_error());
+
+        let error = data
+            .query_only_one_edb("a", (AnyBool, AnyConstant))
+            .unwrap_err();
+        assert!(error.is_schema_error());
+
+        Ok(())
+    }
+
+    #[test]
+    fn mistmatched_predicate_tys_schema_errors() -> Result<()> {
+        let mut schema = Schema::new();
+        schema.insert_tys("a", &[ConstantTy::Bool])?;
+        schema.insert_tys(
+            "b",
+            &[ConstantTy::String, ConstantTy::Num, ConstantTy::Bool],
+        )?;
+
+        let mut data = Passdata::new(&schema);
+
+        let error = match data.query_edb("b", (AnyConstant, AnyConstant, 1)) {
+            Ok(_) => panic!("should have had a schema error"),
+            Err(e) => e,
+        };
+        assert!(error.is_schema_error());
+
+        let error = data.add_fact("a", (1,)).unwrap_err();
+        assert!(error.is_schema_error());
+
+        let error = data.contains_edb("a", (AnyStr,)).unwrap_err();
+        assert!(error.is_schema_error());
+
+        let error = data.query_only_one_edb("a", "xyz").unwrap_err();
+        assert!(error.is_schema_error());
+
+        Ok(())
     }
 }

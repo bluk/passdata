@@ -10,7 +10,10 @@ use std::{borrow::Cow, error, string::String};
 use generic_array::{ArrayLength, GenericArray};
 use typenum::U1;
 
-use crate::values::{self, InvalidType};
+use crate::{
+    values::{self, InvalidType},
+    ConstantTy,
+};
 
 macro_rules! count_ident {
     ($i0:ident) => {1};
@@ -97,12 +100,18 @@ pub trait QueryValue {
     /// The expected type to match.
     type Ty<'a>: TryFrom<values::Constant<'a>>;
 
+    fn ty() -> ConstantTy;
+
     /// Determines if the found value matches the expected value.
     fn is_match(&self, other: &Self::Ty<'_>) -> bool;
 }
 
 impl QueryValue for bool {
     type Ty<'a> = bool;
+
+    fn ty() -> ConstantTy {
+        ConstantTy::Bool
+    }
 
     fn is_match(&self, other: &Self::Ty<'_>) -> bool {
         *self == *other
@@ -116,6 +125,10 @@ pub struct AnyBool;
 impl QueryValue for AnyBool {
     type Ty<'a> = bool;
 
+    fn ty() -> ConstantTy {
+        ConstantTy::Bool
+    }
+
     fn is_match(&self, _other: &Self::Ty<'_>) -> bool {
         true
     }
@@ -123,6 +136,10 @@ impl QueryValue for AnyBool {
 
 impl QueryValue for i64 {
     type Ty<'a> = i64;
+
+    fn ty() -> ConstantTy {
+        ConstantTy::Num
+    }
 
     fn is_match(&self, other: &Self::Ty<'_>) -> bool {
         *self == *other
@@ -136,6 +153,10 @@ pub struct AnyNum;
 impl QueryValue for AnyNum {
     type Ty<'a> = i64;
 
+    fn ty() -> ConstantTy {
+        ConstantTy::Num
+    }
+
     fn is_match(&self, _other: &Self::Ty<'_>) -> bool {
         true
     }
@@ -143,6 +164,10 @@ impl QueryValue for AnyNum {
 
 impl<'b> QueryValue for &'b str {
     type Ty<'a> = Cow<'a, str>;
+
+    fn ty() -> ConstantTy {
+        ConstantTy::String
+    }
 
     fn is_match(&self, other: &Self::Ty<'_>) -> bool {
         *self == *other
@@ -152,6 +177,10 @@ impl<'b> QueryValue for &'b str {
 impl QueryValue for String {
     type Ty<'a> = Cow<'a, str>;
 
+    fn ty() -> ConstantTy {
+        ConstantTy::String
+    }
+
     fn is_match(&self, other: &Self::Ty<'_>) -> bool {
         *self == *other
     }
@@ -159,6 +188,10 @@ impl QueryValue for String {
 
 impl<'b> QueryValue for Cow<'b, str> {
     type Ty<'a> = Cow<'a, str>;
+
+    fn ty() -> ConstantTy {
+        ConstantTy::String
+    }
 
     fn is_match(&self, other: &Self::Ty<'_>) -> bool {
         *self == *other
@@ -172,6 +205,10 @@ pub struct AnyStr;
 impl QueryValue for AnyStr {
     type Ty<'a> = Cow<'a, str>;
 
+    fn ty() -> ConstantTy {
+        ConstantTy::String
+    }
+
     fn is_match(&self, _other: &Self::Ty<'_>) -> bool {
         true
     }
@@ -183,6 +220,10 @@ pub struct AnyConstant;
 
 impl QueryValue for AnyConstant {
     type Ty<'a> = crate::values::Constant<'a>;
+
+    fn ty() -> ConstantTy {
+        ConstantTy::Unknown
+    }
 
     fn is_match(&self, _other: &Self::Ty<'_>) -> bool {
         true
@@ -245,10 +286,12 @@ where
     Self: Sized,
 {
     /// Length of a `lang::Constant` generic array.
-    type Length: ArrayLength<values::Constant<'a>>;
+    type Length: ArrayLength<values::Constant<'a>> + ArrayLength<ConstantTy>;
 
     /// Result type.
     type ResultTy;
+
+    fn tys() -> GenericArray<ConstantTy, Self::Length>;
 
     /// If the given values matches the expected values.
     fn is_match(&self, other: &Self::ResultTy) -> bool;
@@ -273,6 +316,10 @@ where
     type Length = U1;
 
     type ResultTy = T::Ty<'a>;
+
+    fn tys() -> GenericArray<ConstantTy, Self::Length> {
+        generic_array::arr![ConstantTy; T::ty()]
+    }
 
     fn is_match(&self, other: &Self::ResultTy) -> bool {
         self.is_match(other)
@@ -309,6 +356,10 @@ macro_rules! impl_query_result {
             type Length = count_ident_typenum!($($I),+);
 
             type ResultTy = ($($I::Ty<'a>,)+);
+
+            fn tys() -> GenericArray<ConstantTy, Self::Length> {
+                generic_array::arr![ConstantTy; $($I::ty()),+]
+            }
 
             fn is_match(&self, other: &Self::ResultTy) -> bool {
                 #[allow(non_snake_case)]

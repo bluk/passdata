@@ -36,6 +36,22 @@ impl Error {
     pub(crate) fn with_kind(kind: ErrorKind) -> Self {
         Self::new(kind)
     }
+
+    #[cfg(test)]
+    #[must_use]
+    #[inline]
+    pub(crate) fn is_schema_error(&self) -> bool {
+        match self.inner.kind {
+            ErrorKind::InvalidBoolValue
+            | ErrorKind::InvalidNumId
+            | ErrorKind::InvalidStringId
+            | ErrorKind::InvalidScalarId
+            | ErrorKind::QueryResultError(_)
+            | ErrorKind::MultipleMatchingFacts
+            | ErrorKind::DuplicateSchema => false,
+            ErrorKind::UnknownPredicate | ErrorKind::MismatchSchemaTys => true,
+        }
+    }
 }
 
 impl Display for Error {
@@ -89,6 +105,12 @@ pub(crate) enum ErrorKind {
     QueryResultError(QueryResultError),
     /// If there are multiple matching facts
     MultipleMatchingFacts,
+    /// If a schema has already been added for a predicate
+    DuplicateSchema,
+    /// If a predicate is not in the schema
+    UnknownPredicate,
+    /// The given types do not match the schema
+    MismatchSchemaTys,
 }
 
 #[cfg(feature = "std")]
@@ -99,7 +121,10 @@ impl error::Error for ErrorKind {
             | ErrorKind::InvalidNumId
             | ErrorKind::InvalidStringId
             | ErrorKind::InvalidScalarId
-            | ErrorKind::MultipleMatchingFacts => None,
+            | ErrorKind::MultipleMatchingFacts
+            | ErrorKind::DuplicateSchema
+            | ErrorKind::UnknownPredicate
+            | ErrorKind::MismatchSchemaTys => None,
             ErrorKind::QueryResultError(e) => Some(e),
         }
     }
@@ -114,6 +139,11 @@ impl Display for ErrorKind {
             ErrorKind::InvalidScalarId => f.write_str("should be a scalar reference ID"),
             ErrorKind::MultipleMatchingFacts => f.write_str("should be a single matching fact"),
             ErrorKind::QueryResultError(e) => Display::fmt(e, f),
+            ErrorKind::DuplicateSchema => {
+                f.write_str("schema for predicate should only be added once")
+            }
+            ErrorKind::UnknownPredicate => f.write_str("predicate should be in the schema"),
+            ErrorKind::MismatchSchemaTys => f.write_str("types should match schema"),
         }
     }
 }
@@ -127,6 +157,11 @@ impl fmt::Debug for ErrorKind {
             ErrorKind::InvalidScalarId => f.write_str("should be a scalar reference ID"),
             ErrorKind::MultipleMatchingFacts => f.write_str("should be a single matching fact"),
             ErrorKind::QueryResultError(e) => fmt::Debug::fmt(e, f),
+            ErrorKind::DuplicateSchema => {
+                f.write_str("schema for predicate should only be added once")
+            }
+            ErrorKind::UnknownPredicate => f.write_str("predicate should be in the schema"),
+            ErrorKind::MismatchSchemaTys => f.write_str("types should match schema"),
         }
     }
 }
