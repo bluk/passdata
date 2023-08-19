@@ -23,7 +23,6 @@ extern crate alloc;
 #[cfg(all(feature = "alloc", not(feature = "std")))]
 use alloc::borrow::Cow;
 use core::iter;
-use error::ErrorKind;
 #[cfg(feature = "std")]
 use std::borrow::Cow;
 
@@ -36,13 +35,14 @@ pub(crate) mod utils;
 pub(crate) mod values;
 
 use crate::{
-    error::{Error, Result},
+    error::{Error, ErrorKind, Result},
     facts::{Facts, PredicateId},
     utils::{IntoArray, QueryResult},
-    values::{Constant, ConstantId, Context, ScalarId},
+    values::{ConstantId, Context, ScalarId},
 };
 
-pub use utils::{AnyBool, AnyNum, AnyStr};
+pub use utils::{AnyBool, AnyConstant, AnyNum, AnyStr};
+pub use values::Constant;
 
 /// Data for the logic program.
 #[derive(Debug, Default)]
@@ -170,9 +170,14 @@ impl Passdata {
 
 #[cfg(test)]
 mod tests {
-    use crate::utils::{AnyBool, AnyNum, AnyStr};
-
     use super::*;
+
+    #[cfg(all(feature = "alloc", not(feature = "std")))]
+    use alloc::string::String;
+    #[cfg(feature = "std")]
+    use std::string::String;
+
+    use crate::utils::{AnyBool, AnyNum, AnyStr};
 
     #[test]
     fn query_edb() {
@@ -197,6 +202,18 @@ mod tests {
         assert_eq!(y.next(), None);
 
         let mut y = data.query_edb("c", ("xyz", 7, AnyBool));
+        assert_eq!(y.next(), None);
+
+        let mut y = data.query_edb("c", (AnyConstant, AnyConstant, AnyConstant));
+        assert_eq!(
+            y.next(),
+            Some(Ok(("xyz".into(), 1234.into(), false.into())))
+        );
+        assert_eq!(y.next(), Some(Ok(("abc".into(), 7.into(), true.into()))));
+        assert_eq!(y.next(), None);
+
+        let mut y = data.query_edb("c", ("abc", AnyConstant, AnyConstant));
+        assert_eq!(y.next(), Some(Ok(("abc".into(), 7.into(), true.into()))));
         assert_eq!(y.next(), None);
     }
 
@@ -254,5 +271,14 @@ mod tests {
         assert_eq!(data.query_only_one_edb("d", AnyStr), Ok(Some("xyz".into())));
         assert_eq!(data.query_only_one_edb("d", "abc"), Ok(None));
         assert_eq!(data.query_only_one_edb("d", "xyz"), Ok(Some("xyz".into())));
+        assert_eq!(
+            data.query_only_one_edb("d", String::from("xyz")),
+            Ok(Some("xyz".into()))
+        );
+
+        assert_eq!(
+            data.query_only_one_edb("d", AnyConstant),
+            Ok(Some("xyz".into()))
+        );
     }
 }

@@ -1,6 +1,9 @@
 #[cfg(all(feature = "alloc", not(feature = "std")))]
 use alloc::{borrow::Cow, string::String};
-use core::fmt::{self, Display};
+use core::{
+    convert::Infallible,
+    fmt::{self, Display},
+};
 #[cfg(feature = "std")]
 use std::{borrow::Cow, error, string::String};
 
@@ -146,12 +149,40 @@ impl<'b> QueryValue for &'b str {
     }
 }
 
+impl QueryValue for String {
+    type Ty<'a> = Cow<'a, str>;
+
+    fn is_match(&self, other: &Self::Ty<'_>) -> bool {
+        *self == *other
+    }
+}
+
+impl<'b> QueryValue for Cow<'b, str> {
+    type Ty<'a> = Cow<'a, str>;
+
+    fn is_match(&self, other: &Self::Ty<'_>) -> bool {
+        *self == *other
+    }
+}
+
 /// Any string value.
 #[derive(Debug, Clone, Copy)]
 pub struct AnyStr;
 
 impl QueryValue for AnyStr {
     type Ty<'a> = Cow<'a, str>;
+
+    fn is_match(&self, _other: &Self::Ty<'_>) -> bool {
+        true
+    }
+}
+
+/// Any constant value.
+#[derive(Debug, Clone, Copy)]
+pub struct AnyConstant;
+
+impl QueryValue for AnyConstant {
+    type Ty<'a> = crate::values::Constant<'a>;
 
     fn is_match(&self, _other: &Self::Ty<'_>) -> bool {
         true
@@ -202,6 +233,12 @@ impl From<InvalidType> for QueryResultError {
     }
 }
 
+impl From<Infallible> for QueryResultError {
+    fn from(_: Infallible) -> Self {
+        unreachable!()
+    }
+}
+
 /// Converts data into a query result.
 pub trait QueryResult<'a>
 where
@@ -227,10 +264,11 @@ where
     ) -> Result<Self::ResultTy, QueryResultError>;
 }
 
-impl<'a, T> QueryResult<'a> for T
+impl<'a, T, E> QueryResult<'a> for T
 where
-    T::Ty<'a>: TryFrom<values::Constant<'a>, Error = InvalidType>,
+    T::Ty<'a>: TryFrom<values::Constant<'a>, Error = E>,
     T: QueryValue,
+    QueryResultError: From<E>,
 {
     type Length = U1;
 
@@ -260,9 +298,12 @@ macro_rules! impl_query_result {
     ($i0:ident, $($I:ident),+) => {
         impl_query_result!($($I),+);
 
-        impl<'a, $($I),+> QueryResult<'a> for ($($I,)+)
-            where $($I::Ty<'a> : TryFrom<values::Constant<'a>, Error = InvalidType>),+,
+        paste::paste! {
+
+        impl<'a, $($I),+, $([<E $I>]),+> QueryResult<'a> for ($($I,)+)
+            where $($I::Ty<'a> : TryFrom<values::Constant<'a>, Error =  [<E $I>]>),+,
             $($I: QueryValue),+,
+            $(QueryResultError: From<[<E $I>]>),+,
             Self: Sized
         {
             type Length = count_ident_typenum!($($I),+);
@@ -270,7 +311,6 @@ macro_rules! impl_query_result {
             type ResultTy = ($($I::Ty<'a>,)+);
 
             fn is_match(&self, other: &Self::ResultTy) -> bool {
-                paste::paste! {
                 #[allow(non_snake_case)]
                 let ($([<a_ $I>],)+) = self;
                 #[allow(non_snake_case)]
@@ -281,7 +321,6 @@ macro_rules! impl_query_result {
                         return false;
                     }
                 )+
-                };
 
                 true
             }
@@ -304,6 +343,8 @@ macro_rules! impl_query_result {
 
                 Ok(t)
             }
+        }
+
         }
     };
 }
