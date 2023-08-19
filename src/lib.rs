@@ -28,6 +28,7 @@ use std::borrow::Cow;
 
 use either::Either;
 use generic_array::{ArrayLength, GenericArray};
+use typenum::Unsigned;
 
 pub mod error;
 pub(crate) mod facts;
@@ -105,13 +106,12 @@ impl Passdata {
     ) -> impl Iterator<Item = Result<T::ResultTy>> + 'a
     where
         T: QueryResult<'a> + 'a,
-        <T as QueryResult<'a>>::Length: ArrayLength<ConstantId>,
     {
         let Some(pred) = self.context.string_id(pred).map(PredicateId::from) else {
             return Either::Left(iter::empty());
         };
 
-        let Some(iter) = self.edb.terms_iter::<T::Length>(pred) else {
+        let Some(iter) = self.edb.terms_iter(pred, T::Length::USIZE) else {
             return Either::Left(iter::empty());
         };
 
@@ -140,7 +140,6 @@ impl Passdata {
     pub fn contains_edb<'a, T>(&'a self, pred: &str, values: T) -> bool
     where
         T: QueryResult<'a> + 'a,
-        <T as QueryResult<'a>>::Length: ArrayLength<ConstantId>,
     {
         self.query_edb(pred, values).any(|v| v.is_ok())
     }
@@ -155,7 +154,6 @@ impl Passdata {
     pub fn query_only_one_edb<'a, T>(&'a self, pred: &str, values: T) -> Result<Option<T::ResultTy>>
     where
         T: QueryResult<'a> + 'a,
-        <T as QueryResult<'a>>::Length: ArrayLength<ConstantId>,
     {
         let mut iter = self.query_edb(pred, values);
         let Some(first) = iter.next() else {

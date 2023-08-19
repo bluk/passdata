@@ -56,29 +56,27 @@ impl Facts {
     }
 
     /// An iterator for terms for a given predicate.
-    pub(crate) fn terms_iter<N: ArrayLength<ConstantId>>(
+    pub(crate) fn terms_iter(
         &self,
         pred: PredicateId,
-    ) -> Option<impl Iterator<Item = GenericArray<ConstantId, N>> + '_> {
-        self.terms.get(&pred).map(|constants| {
-            assert_eq!(constants.len() % N::USIZE, 0);
-            constants
-                .chunks_exact(N::USIZE)
-                .map(|cs| <GenericArray<ConstantId, N>>::clone_from_slice(cs))
-        })
+        pred_len: usize,
+    ) -> Option<impl Iterator<Item = &[ConstantId]> + '_> {
+        self.terms
+            .get(&pred)
+            .map(|constants| constants.chunks_exact(pred_len))
     }
 
     /// Returns true if the fact already exists.
     #[must_use]
     #[inline]
-    pub(crate) fn contains_terms<N: ArrayLength<ConstantId>>(
+    pub(crate) fn contains_terms(
         &self,
         pred: PredicateId,
-        terms: &GenericArray<ConstantId, N>,
+        pred_len: usize,
+        terms: &[ConstantId],
     ) -> bool {
-        self.terms_iter(pred).map_or(false, |mut i| {
-            i.any(|existing_fact| existing_fact == *terms)
-        })
+        self.terms_iter(pred, pred_len)
+            .map_or(false, |mut i| i.any(|existing_fact| existing_fact == terms))
     }
 
     /// Pushes a new tuple value for a predicate.
@@ -89,7 +87,7 @@ impl Facts {
     ) {
         assert!(!constants.is_empty());
 
-        if !self.contains_terms(pred, &constants) {
+        if !self.contains_terms(pred, constants.len(), constants.as_slice()) {
             self.terms.entry(pred).or_default().extend(constants);
         }
     }
