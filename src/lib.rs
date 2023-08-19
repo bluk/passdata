@@ -38,7 +38,7 @@ use crate::{
     error::{Error, ErrorKind, Result},
     facts::{Facts, PredicateId},
     utils::{IntoArray, QueryResult},
-    values::{ConstantId, Context, ScalarId},
+    values::{ConstantId, Context, ScalarId, StringId},
 };
 
 pub use utils::{AnyBool, AnyConstant, AnyNum, AnyStr};
@@ -61,6 +61,13 @@ impl Passdata {
             context: Context::default(),
             edb: Facts::default(),
         }
+    }
+
+    /// Iterator over predicates.
+    pub fn predicates_iter(&self) -> impl Iterator<Item = &str> + '_ {
+        self.edb
+            .pred_iter()
+            .map(|id| self.context.str(StringId::from(id)))
     }
 
     /// Add a fact explicitly.

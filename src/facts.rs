@@ -30,6 +30,12 @@ impl From<StringId> for PredicateId {
     }
 }
 
+impl From<PredicateId> for StringId {
+    fn from(value: PredicateId) -> Self {
+        Self(value.0)
+    }
+}
+
 impl TryFrom<ConstantId> for PredicateId {
     type Error = Error;
 
@@ -44,6 +50,11 @@ pub(crate) struct Facts {
 }
 
 impl Facts {
+    /// An iterator over the predicates.
+    pub(crate) fn pred_iter(&self) -> impl Iterator<Item = PredicateId> + '_ {
+        self.terms.keys().copied()
+    }
+
     /// An iterator for terms for a given predicate.
     pub(crate) fn terms_iter<N: ArrayLength<ConstantId>>(
         &self,
