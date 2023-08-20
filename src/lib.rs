@@ -38,7 +38,7 @@ pub(crate) mod values;
 
 use crate::{
     error::{Error, ErrorKind, Result},
-    facts::{Facts, PredicateId},
+    facts::{FactTerms, Facts, PredicateId},
     utils::{IntoArray, QueryResult},
     values::{ConstantId, Context, ScalarId, StringId},
 };
@@ -74,6 +74,30 @@ impl<'s> Passdata<'s> {
         self.edb
             .pred_iter()
             .map(|id| self.context.str(StringId::from(id)))
+    }
+
+    /// Iterator over facts.
+    ///
+    /// # Errors
+    ///
+    /// - if the predicate is unknown.
+    pub fn edb_iter(&self, predicate: &str) -> Result<impl Iterator<Item = FactTerms<'_>> + '_> {
+        let Some(tys) = self.schema.get_tys(predicate) else {
+            return Err(Error::with_kind(ErrorKind::UnknownPredicate));
+        };
+
+        let Some(pred) = self.context.string_id(predicate).map(PredicateId::from) else {
+            return Ok(Either::Left(iter::empty()));
+        };
+
+        let Some(iter) = self.edb.terms_iter(pred, tys.len()) else {
+            return Ok(Either::Left(iter::empty()));
+        };
+
+        Ok(Either::Right(iter.map(|constants| FactTerms {
+            constants,
+            context: &self.context,
+        })))
     }
 
     /// Add a fact explicitly.
@@ -197,11 +221,92 @@ mod tests {
     use super::*;
 
     #[cfg(all(feature = "alloc", not(feature = "std")))]
-    use alloc::string::String;
+    use alloc::{string::String, vec};
     #[cfg(feature = "std")]
-    use std::string::String;
+    use std::{string::String, vec};
 
     use crate::utils::{AnyBool, AnyNum, AnyStr};
+
+    #[test]
+    fn edb_iter() -> Result<()> {
+        let mut schema = Schema::new();
+        schema.insert_tys("a", &[ConstantTy::Bool])?;
+        schema.insert_tys(
+            "b",
+            &[ConstantTy::String, ConstantTy::Num, ConstantTy::Bool],
+        )?;
+
+        let mut data = Passdata::new(&schema);
+
+        let mut iter = data.edb_iter("a")?;
+        assert_eq!(iter.next(), None);
+        drop(iter);
+
+        data.add_fact("a", true)?;
+        data.add_fact("b", ("xyz", 1234, false))?;
+        data.add_fact("b", ("xyz", 5678, true))?;
+
+        let mut iter = data.edb_iter("a")?;
+        assert_eq!(
+            iter.next().map(|t| t.to_vec()),
+            Some(vec![Constant::Bool(true)])
+        );
+        assert_eq!(iter.next(), None);
+
+        let mut iter = data.edb_iter("b")?;
+        assert_eq!(
+            iter.next().map(|t| t.to_vec()),
+            Some(vec![
+                Constant::String(Cow::from("xyz")),
+                Constant::Num(1234),
+                Constant::Bool(false)
+            ])
+        );
+        assert_eq!(
+            iter.next().map(|t| t.to_vec()),
+            Some(vec![
+                Constant::String(Cow::from("xyz")),
+                Constant::Num(5678),
+                Constant::Bool(true)
+            ])
+        );
+        assert_eq!(iter.next(), None);
+
+        let mut values: [Constant<'_>; 8] = [
+            Constant::Bool(false),
+            Constant::Bool(false),
+            Constant::Bool(false),
+            Constant::Bool(false),
+            Constant::Bool(false),
+            Constant::Bool(false),
+            Constant::Bool(false),
+            Constant::Bool(false),
+        ];
+
+        let mut iter = data.edb_iter("b")?;
+        let dst = iter.next().unwrap().fill_buf(&mut values)?;
+        assert_eq!(
+            dst,
+            vec![
+                Constant::String(Cow::from("xyz")),
+                Constant::Num(1234),
+                Constant::Bool(false)
+            ]
+        );
+
+        let dst = iter.next().unwrap().fill_buf(&mut values)?;
+        assert_eq!(
+            dst,
+            &[
+                Constant::String(Cow::from("xyz")),
+                Constant::Num(5678),
+                Constant::Bool(true)
+            ]
+        );
+        assert_eq!(iter.next(), None);
+
+        Ok(())
+    }
 
     #[test]
     fn query_edb() -> Result<()> {

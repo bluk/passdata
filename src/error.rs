@@ -10,7 +10,7 @@ use alloc::boxed::Box;
 #[cfg(feature = "std")]
 use std::{boxed::Box, error};
 
-use crate::utils::QueryResultError;
+use crate::{facts::FactTermsError, utils::QueryResultError};
 
 /// Alias for a [`Result`][result::Result] with an [Error] error type.
 pub type Result<T> = result::Result<T, Error>;
@@ -48,7 +48,8 @@ impl Error {
             | ErrorKind::InvalidScalarId
             | ErrorKind::QueryResultError(_)
             | ErrorKind::MultipleMatchingFacts
-            | ErrorKind::DuplicateSchema => false,
+            | ErrorKind::DuplicateSchema
+            | ErrorKind::FactTermsError(_) => false,
             ErrorKind::UnknownPredicate | ErrorKind::MismatchSchemaTys => true,
         }
     }
@@ -69,6 +70,12 @@ impl fmt::Debug for Error {
 impl From<QueryResultError> for Error {
     fn from(value: QueryResultError) -> Self {
         Self::with_kind(ErrorKind::QueryResultError(value))
+    }
+}
+
+impl From<FactTermsError> for Error {
+    fn from(value: FactTermsError) -> Self {
+        Self::with_kind(ErrorKind::FactTermsError(value))
     }
 }
 
@@ -111,6 +118,8 @@ pub(crate) enum ErrorKind {
     UnknownPredicate,
     /// The given types do not match the schema
     MismatchSchemaTys,
+    /// Fact terms error
+    FactTermsError(FactTermsError),
 }
 
 #[cfg(feature = "std")]
@@ -126,6 +135,7 @@ impl error::Error for ErrorKind {
             | ErrorKind::UnknownPredicate
             | ErrorKind::MismatchSchemaTys => None,
             ErrorKind::QueryResultError(e) => Some(e),
+            ErrorKind::FactTermsError(e) => Some(e),
         }
     }
 }
@@ -144,6 +154,7 @@ impl Display for ErrorKind {
             }
             ErrorKind::UnknownPredicate => f.write_str("predicate should be in the schema"),
             ErrorKind::MismatchSchemaTys => f.write_str("types should match schema"),
+            ErrorKind::FactTermsError(e) => Display::fmt(e, f),
         }
     }
 }
@@ -162,6 +173,7 @@ impl fmt::Debug for ErrorKind {
             }
             ErrorKind::UnknownPredicate => f.write_str("predicate should be in the schema"),
             ErrorKind::MismatchSchemaTys => f.write_str("types should match schema"),
+            ErrorKind::FactTermsError(e) => fmt::Debug::fmt(e, f),
         }
     }
 }

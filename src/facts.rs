@@ -10,14 +10,16 @@
 
 #[cfg(all(feature = "alloc", not(feature = "std")))]
 use alloc::{collections::BTreeMap, vec::Vec};
+use core::fmt;
 #[cfg(feature = "std")]
-use std::{collections::BTreeMap, vec::Vec};
+use std::{collections::BTreeMap, error, vec::Vec};
 
 use generic_array::{ArrayLength, GenericArray};
 
 use crate::{
     error::Error,
-    values::{ConstantId, ScalarId, StringId},
+    values::{ConstantId, Context, ScalarId, StringId},
+    Constant,
 };
 
 /// An interned predicate reference.
@@ -90,5 +92,73 @@ impl Facts {
         if !self.contains_terms(pred, constants.len(), constants.as_slice()) {
             self.terms.entry(pred).or_default().extend(constants);
         }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum FactTermsError {
+    InvalidLength,
+}
+
+impl fmt::Debug for FactTermsError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidLength => f.write_str("invalid length"),
+        }
+    }
+}
+
+impl fmt::Display for FactTermsError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidLength => f.write_str("invalid length"),
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl error::Error for FactTermsError {
+    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
+        match self {
+            Self::InvalidLength => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FactTerms<'a> {
+    pub(crate) constants: &'a [ConstantId],
+    pub(crate) context: &'a Context,
+}
+
+impl<'a> FactTerms<'a> {
+    #[must_use]
+    pub fn to_vec(&self) -> Vec<Constant<'a>> {
+        self.constants
+            .iter()
+            .map(|c| self.context.constant(*c))
+            .collect::<Vec<_>>()
+    }
+
+    pub fn fill_buf<'b>(
+        &self,
+        dst: &'b mut [Constant<'a>],
+    ) -> Result<&'b [Constant<'a>], FactTermsError> {
+        let expected_len = self.constants.len();
+        if dst.len() < expected_len {
+            return Err(FactTermsError::InvalidLength);
+        }
+
+        for (idx, id) in self.constants.iter().enumerate() {
+            dst[idx] = self.context.constant(*id);
+        }
+
+        Ok(&dst[..expected_len])
+    }
+
+    #[must_use]
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.constants.len()
     }
 }
