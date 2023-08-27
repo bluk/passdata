@@ -61,11 +61,11 @@ pub struct Passdata<'s> {
 impl<'s> Passdata<'s> {
     /// Constructs with empty data.
     #[must_use]
-    pub fn new(schema: &'s Schema<'s>) -> Self {
+    pub const fn new(schema: &'s Schema<'s>) -> Self {
         Self {
             schema,
-            context: Context::default(),
-            edb: Facts::default(),
+            context: Context::new(),
+            edb: Facts::new(),
         }
     }
 

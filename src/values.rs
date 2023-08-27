@@ -30,7 +30,7 @@ const NUMBER_INDEX_RANGE: core::ops::RangeInclusive<u16> =
     NUMBER_START_INDEX..=NUMBER_INCLUSIVE_END_INDEX;
 
 #[inline]
-fn is_bool_ref(value: u16) -> bool {
+const fn is_bool_ref(value: u16) -> bool {
     value == BOOL_FALSE_INDEX || value == BOOL_TRUE_INDEX
 }
 
@@ -275,6 +275,15 @@ pub(crate) struct Context {
 }
 
 impl Context {
+    /// Create an empty context.
+    #[must_use]
+    pub const fn new() -> Self {
+        Self {
+            strings: Vec::new(),
+            numbers: Vec::new(),
+        }
+    }
+
     /// Given a string, returns the existing [`StringId`], if the string exists in the context.
     #[must_use]
     pub(crate) fn string_id(&self, needle: &str) -> Option<StringId> {

@@ -52,6 +52,13 @@ pub(crate) struct Facts {
 }
 
 impl Facts {
+    #[must_use]
+    pub const fn new() -> Self {
+        Self {
+            terms: BTreeMap::new(),
+        }
+    }
+
     /// An iterator over the predicates.
     pub(crate) fn pred_iter(&self) -> impl Iterator<Item = PredicateId> + '_ {
         self.terms.keys().copied()
@@ -158,7 +165,7 @@ impl<'a> FactTerms<'a> {
 
     #[must_use]
     #[inline]
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.constants.len()
     }
 }

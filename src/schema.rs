@@ -58,9 +58,9 @@ pub struct Schema<'a> {
 impl<'a> Schema<'a> {
     /// Constructs an empty schema.
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
-            tys: BTreeMap::default(),
+            tys: BTreeMap::new(),
         }
     }
 
