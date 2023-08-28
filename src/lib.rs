@@ -40,7 +40,7 @@ use crate::{
     error::{Error, ErrorKind, Result},
     facts::{FactTerms, Facts, PredicateId},
     utils::{IntoArray, QueryResult},
-    values::{ConstantId, Context, ScalarId, StringId},
+    values::{BytesId, ConstantId, Context, ScalarId},
 };
 
 pub use schema::{ConstantTy, Schema};
@@ -71,9 +71,13 @@ impl<'s> Passdata<'s> {
 
     /// Iterator over predicates.
     pub fn predicates_iter(&self) -> impl Iterator<Item = &str> + '_ {
-        self.edb
-            .pred_iter()
-            .map(|id| self.context.str(StringId::from(id)))
+        self.edb.pred_iter().map(|id| {
+            let bytes = self.context.bytes(BytesId::from(id));
+            let Ok(p) = core::str::from_utf8(bytes) else {
+                unreachable!("predicate should be a UTF-8 string")
+            };
+            p
+        })
     }
 
     /// Iterator over facts.
@@ -86,7 +90,11 @@ impl<'s> Passdata<'s> {
             return Err(Error::with_kind(ErrorKind::UnknownPredicate));
         };
 
-        let Some(pred) = self.context.string_id(predicate).map(PredicateId::from) else {
+        let Some(pred) = self
+            .context
+            .bytes_id(predicate.as_bytes())
+            .map(PredicateId::from)
+        else {
             return Ok(Either::Left(iter::empty()));
         };
 
@@ -120,13 +128,17 @@ impl<'s> Passdata<'s> {
 
         let mut v: GenericArray<ConstantId, T::Length> = GenericArray::default();
 
-        let pred = PredicateId::from(self.context.get_or_insert_string_id(predicate));
+        let predicate = match predicate {
+            Cow::Borrowed(p) => Cow::Borrowed(p.as_bytes()),
+            Cow::Owned(p) => Cow::Owned(p.into_bytes()),
+        };
+        let pred = PredicateId::from(self.context.get_or_insert_bytes_id(predicate));
 
         for (idx, c) in constants.into_iter().enumerate() {
             v[idx] = match c {
                 Constant::Bool(value) => ScalarId::from(value).into(),
                 Constant::Num(value) => self.context.get_or_insert_num_id(value).into(),
-                Constant::String(value) => self.context.get_or_insert_string_id(value).into(),
+                Constant::Bytes(value) => self.context.get_or_insert_bytes_id(value).into(),
             };
         }
 
@@ -150,7 +162,11 @@ impl<'s> Passdata<'s> {
     {
         self.schema.validate_tys(predicate, &T::tys())?;
 
-        let Some(pred) = self.context.string_id(predicate).map(PredicateId::from) else {
+        let Some(pred) = self
+            .context
+            .bytes_id(predicate.as_bytes())
+            .map(PredicateId::from)
+        else {
             return Ok(Either::Left(iter::empty()));
         };
 
@@ -167,7 +183,7 @@ impl<'s> Passdata<'s> {
             let res = match T::into_tuple(r) {
                 Ok(res) => res,
                 Err(e) => {
-                    unreachable!("{}", e)
+                    unreachable!("{e}")
                 }
             };
 
@@ -225,16 +241,13 @@ mod tests {
     #[cfg(feature = "std")]
     use std::{string::String, vec};
 
-    use crate::utils::{AnyBool, AnyNum, AnyStr};
+    use crate::utils::{AnyBool, AnyBytes, AnyNum, AnyStr};
 
     #[test]
     fn edb_iter() -> Result<()> {
         let mut schema = Schema::new();
         schema.insert_tys("a", &[ConstantTy::Bool])?;
-        schema.insert_tys(
-            "b",
-            &[ConstantTy::String, ConstantTy::Num, ConstantTy::Bool],
-        )?;
+        schema.insert_tys("b", &[ConstantTy::Bytes, ConstantTy::Num, ConstantTy::Bool])?;
 
         let mut data = Passdata::new(&schema);
 
@@ -257,7 +270,7 @@ mod tests {
         assert_eq!(
             iter.next().map(|t| t.to_vec()),
             Some(vec![
-                Constant::String(Cow::from("xyz")),
+                Constant::Bytes(Cow::from("xyz".as_bytes())),
                 Constant::Num(1234),
                 Constant::Bool(false)
             ])
@@ -265,7 +278,7 @@ mod tests {
         assert_eq!(
             iter.next().map(|t| t.to_vec()),
             Some(vec![
-                Constant::String(Cow::from("xyz")),
+                Constant::Bytes(Cow::from("xyz".as_bytes())),
                 Constant::Num(5678),
                 Constant::Bool(true)
             ])
@@ -288,7 +301,7 @@ mod tests {
         assert_eq!(
             dst,
             vec![
-                Constant::String(Cow::from("xyz")),
+                Constant::Bytes(Cow::from("xyz".as_bytes())),
                 Constant::Num(1234),
                 Constant::Bool(false)
             ]
@@ -298,7 +311,7 @@ mod tests {
         assert_eq!(
             dst,
             &[
-                Constant::String(Cow::from("xyz")),
+                Constant::Bytes(Cow::from("xyz".as_bytes())),
                 Constant::Num(5678),
                 Constant::Bool(true)
             ]
@@ -313,14 +326,11 @@ mod tests {
         let mut schema = Schema::default();
         schema.insert_tys("a", &[ConstantTy::Bool])?;
         schema.insert_tys("a2", &[ConstantTy::Num])?;
-        schema.insert_tys("a3", &[ConstantTy::String])?;
-        schema.insert_tys("a4", &[ConstantTy::String])?;
+        schema.insert_tys("a3", &[ConstantTy::Bytes])?;
+        schema.insert_tys("a4", &[ConstantTy::Bytes])?;
         schema.insert_tys("b", &[ConstantTy::Num, ConstantTy::Num])?;
         schema.insert_tys("b2", &[ConstantTy::Num, ConstantTy::Num])?;
-        schema.insert_tys(
-            "c",
-            &[ConstantTy::String, ConstantTy::Num, ConstantTy::Bool],
-        )?;
+        schema.insert_tys("c", &[ConstantTy::Bytes, ConstantTy::Num, ConstantTy::Bool])?;
 
         let mut data = Passdata::new(&schema);
 
@@ -336,6 +346,11 @@ mod tests {
         let mut y = data.query_edb("c", (AnyStr, AnyNum, AnyBool))?;
         assert_eq!(y.next(), Some(("xyz".into(), 1234, false)));
         assert_eq!(y.next(), Some(("abc".into(), 7, true)));
+        assert_eq!(y.next(), None);
+
+        let mut y = data.query_edb("c", (AnyBytes, AnyNum, AnyBool))?;
+        assert_eq!(y.next(), Some(("xyz".as_bytes().into(), 1234, false)));
+        assert_eq!(y.next(), Some(("abc".as_bytes().into(), 7, true)));
         assert_eq!(y.next(), None);
 
         let mut y = data.query_edb("c", ("xyz", 1234, false))?;
@@ -361,10 +376,7 @@ mod tests {
     fn contains_edb() -> Result<()> {
         let mut schema = Schema::new();
         schema.insert_tys("a", &[ConstantTy::Bool])?;
-        schema.insert_tys(
-            "b",
-            &[ConstantTy::String, ConstantTy::Num, ConstantTy::Bool],
-        )?;
+        schema.insert_tys("b", &[ConstantTy::Bytes, ConstantTy::Num, ConstantTy::Bool])?;
 
         let mut data = Passdata::new(&schema);
 
@@ -391,9 +403,9 @@ mod tests {
         static ref QUERY_ONLY_ONE_EDB_SCHEMA: Schema<'static> = {
             let mut schema = Schema::new();
             schema.insert_tys("a", &[ConstantTy::Bool]).unwrap();
-            schema.insert_tys("b", &[ConstantTy::String, ConstantTy::Num, ConstantTy::Bool]).unwrap();
+            schema.insert_tys("b", &[ConstantTy::Bytes, ConstantTy::Num, ConstantTy::Bool]).unwrap();
             schema.insert_tys("c", &[ConstantTy::Num]).unwrap();
-            schema.insert_tys("d", &[ConstantTy::String]).unwrap();
+            schema.insert_tys("d", &[ConstantTy::Bytes]).unwrap();
             schema
         };
     }
@@ -429,6 +441,10 @@ mod tests {
         assert_eq!(data.query_only_one_edb("c", 5678), Ok(None));
 
         assert_eq!(data.query_only_one_edb("d", AnyStr), Ok(Some("xyz".into())));
+        assert_eq!(
+            data.query_only_one_edb("d", AnyBytes),
+            Ok(Some("xyz".as_bytes().into()))
+        );
         assert_eq!(data.query_only_one_edb("d", "abc"), Ok(None));
         assert_eq!(data.query_only_one_edb("d", "xyz"), Ok(Some("xyz".into())));
         assert_eq!(
@@ -469,10 +485,7 @@ mod tests {
     fn unexpected_predicate_tys_length_schema_errors() -> Result<()> {
         let mut schema = Schema::new();
         schema.insert_tys("a", &[ConstantTy::Bool])?;
-        schema.insert_tys(
-            "b",
-            &[ConstantTy::String, ConstantTy::Num, ConstantTy::Bool],
-        )?;
+        schema.insert_tys("b", &[ConstantTy::Bytes, ConstantTy::Num, ConstantTy::Bool])?;
 
         let mut data = Passdata::new(&schema);
 
@@ -500,10 +513,7 @@ mod tests {
     fn mistmatched_predicate_tys_schema_errors() -> Result<()> {
         let mut schema = Schema::new();
         schema.insert_tys("a", &[ConstantTy::Bool])?;
-        schema.insert_tys(
-            "b",
-            &[ConstantTy::String, ConstantTy::Num, ConstantTy::Bool],
-        )?;
+        schema.insert_tys("b", &[ConstantTy::Bytes, ConstantTy::Num, ConstantTy::Bool])?;
 
         let mut data = Passdata::new(&schema);
 

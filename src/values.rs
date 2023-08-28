@@ -20,10 +20,10 @@ use crate::error::{Error, ErrorKind, Result};
 
 const BOOL_FALSE_INDEX: u16 = 0;
 const BOOL_TRUE_INDEX: u16 = 1;
-const STRING_START_INDEX: u16 = 32;
-const STRING_INCLUSIVE_END_INDEX: u16 = 513;
-const STRING_INDEX_RANGE: core::ops::RangeInclusive<u16> =
-    STRING_START_INDEX..=STRING_INCLUSIVE_END_INDEX;
+const BYTES_START_INDEX: u16 = 32;
+const BYTES_INCLUSIVE_END_INDEX: u16 = 513;
+const BYTES_INDEX_RANGE: core::ops::RangeInclusive<u16> =
+    BYTES_START_INDEX..=BYTES_INCLUSIVE_END_INDEX;
 const NUMBER_START_INDEX: u16 = 514;
 const NUMBER_INCLUSIVE_END_INDEX: u16 = 765;
 const NUMBER_INDEX_RANGE: core::ops::RangeInclusive<u16> =
@@ -35,8 +35,8 @@ const fn is_bool_ref(value: u16) -> bool {
 }
 
 #[inline]
-fn is_string_ref(value: u16) -> bool {
-    STRING_INDEX_RANGE.contains(&value)
+fn is_bytes_ref(value: u16) -> bool {
+    BYTES_INDEX_RANGE.contains(&value)
 }
 
 #[inline]
@@ -46,7 +46,7 @@ fn is_number_ref(value: u16) -> bool {
 
 #[inline]
 fn is_scalar_ref(value: u16) -> bool {
-    is_bool_ref(value) || is_string_ref(value) || is_number_ref(value)
+    is_bool_ref(value) || is_bytes_ref(value) || is_number_ref(value)
 }
 
 impl TryFrom<ScalarId> for bool {
@@ -61,18 +61,18 @@ impl TryFrom<ScalarId> for bool {
     }
 }
 
-/// An interned string ID reference.
+/// An interned bytes reference.
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) struct StringId(pub(crate) u16);
+pub(crate) struct BytesId(pub(crate) u16);
 
-impl TryFrom<ScalarId> for StringId {
+impl TryFrom<ScalarId> for BytesId {
     type Error = Error;
 
     fn try_from(value: ScalarId) -> Result<Self> {
-        if is_string_ref(value.0) {
-            Ok(StringId(value.0))
+        if is_bytes_ref(value.0) {
+            Ok(BytesId(value.0))
         } else {
-            Err(Error::with_kind(ErrorKind::InvalidStringId))
+            Err(Error::with_kind(ErrorKind::InvalidBytesId))
         }
     }
 }
@@ -114,9 +114,9 @@ impl From<NumId> for ScalarId {
     }
 }
 
-impl From<StringId> for ScalarId {
-    fn from(value: StringId) -> Self {
-        debug_assert!(is_string_ref(value.0));
+impl From<BytesId> for ScalarId {
+    fn from(value: BytesId) -> Self {
+        debug_assert!(is_bytes_ref(value.0));
         Self(value.0)
     }
 }
@@ -150,9 +150,9 @@ impl From<NumId> for ConstantId {
     }
 }
 
-impl From<StringId> for ConstantId {
-    fn from(value: StringId) -> Self {
-        debug_assert!(is_string_ref(value.0));
+impl From<BytesId> for ConstantId {
+    fn from(value: BytesId) -> Self {
+        debug_assert!(is_bytes_ref(value.0));
         Self(value.0)
     }
 }
@@ -170,8 +170,8 @@ pub enum Constant<'a> {
     Bool(bool),
     /// Number
     Num(i64),
-    /// String
-    String(Cow<'a, str>),
+    /// Byte string
+    Bytes(Cow<'a, [u8]>),
 }
 
 impl<'a> Default for Constant<'a> {
@@ -194,19 +194,40 @@ impl<'a> From<i64> for Constant<'a> {
 
 impl<'a> From<&'a str> for Constant<'a> {
     fn from(value: &'a str) -> Self {
-        Constant::String(Cow::from(value))
+        Constant::Bytes(Cow::from(value.as_bytes()))
     }
 }
 
 impl<'a> From<String> for Constant<'a> {
     fn from(value: String) -> Self {
-        Constant::String(Cow::from(value))
+        Constant::Bytes(Cow::from(value.into_bytes()))
     }
 }
 
 impl<'a> From<Cow<'a, str>> for Constant<'a> {
     fn from(value: Cow<'a, str>) -> Self {
-        Constant::String(value)
+        match value {
+            Cow::Borrowed(value) => Constant::Bytes(Cow::from(value.as_bytes())),
+            Cow::Owned(value) => Constant::Bytes(Cow::from(value.into_bytes())),
+        }
+    }
+}
+
+impl<'a> From<&'a [u8]> for Constant<'a> {
+    fn from(value: &'a [u8]) -> Self {
+        Constant::Bytes(Cow::from(value))
+    }
+}
+
+impl<'a> From<Vec<u8>> for Constant<'a> {
+    fn from(value: Vec<u8>) -> Self {
+        Constant::Bytes(Cow::from(value))
+    }
+}
+
+impl<'a> From<Cow<'a, [u8]>> for Constant<'a> {
+    fn from(value: Cow<'a, [u8]>) -> Self {
+        Constant::Bytes(value)
     }
 }
 
@@ -239,7 +260,49 @@ impl<'a> TryFrom<Constant<'a>> for Cow<'a, str> {
     fn try_from(value: Constant<'a>) -> core::result::Result<Self, Self::Error> {
         match value {
             Constant::Bool(_) | Constant::Num(_) => Err(InvalidType),
-            Constant::String(s) => Ok(s),
+            Constant::Bytes(bytes) => match bytes {
+                Cow::Borrowed(bytes) => Ok(Cow::from(
+                    core::str::from_utf8(bytes).map_err(|_| InvalidType)?,
+                )),
+                Cow::Owned(bytes) => Ok(Cow::from(
+                    String::from_utf8(bytes).map_err(|_| InvalidType)?,
+                )),
+            },
+        }
+    }
+}
+
+impl<'a> TryFrom<Constant<'a>> for String {
+    type Error = InvalidType;
+
+    fn try_from(value: Constant<'a>) -> core::result::Result<Self, Self::Error> {
+        match value {
+            Constant::Bool(_) | Constant::Num(_) => Err(InvalidType),
+            Constant::Bytes(bytes) => {
+                Ok(String::from_utf8(bytes.into_owned()).map_err(|_| InvalidType)?)
+            }
+        }
+    }
+}
+
+impl<'a> TryFrom<Constant<'a>> for Cow<'a, [u8]> {
+    type Error = InvalidType;
+
+    fn try_from(value: Constant<'a>) -> core::result::Result<Self, Self::Error> {
+        match value {
+            Constant::Bool(_) | Constant::Num(_) => Err(InvalidType),
+            Constant::Bytes(bytes) => Ok(bytes),
+        }
+    }
+}
+
+impl<'a> TryFrom<Constant<'a>> for Vec<u8> {
+    type Error = InvalidType;
+
+    fn try_from(value: Constant<'a>) -> core::result::Result<Self, Self::Error> {
+        match value {
+            Constant::Bool(_) | Constant::Num(_) => Err(InvalidType),
+            Constant::Bytes(bytes) => Ok(bytes.into_owned()),
         }
     }
 }
@@ -249,7 +312,7 @@ impl<'a> TryFrom<Constant<'a>> for i64 {
 
     fn try_from(value: Constant<'a>) -> core::result::Result<Self, Self::Error> {
         match value {
-            Constant::Bool(_) | Constant::String(_) => Err(InvalidType),
+            Constant::Bool(_) | Constant::Bytes(_) => Err(InvalidType),
             Constant::Num(n) => Ok(n),
         }
     }
@@ -261,15 +324,15 @@ impl<'a> TryFrom<Constant<'a>> for bool {
     fn try_from(value: Constant<'a>) -> core::result::Result<Self, Self::Error> {
         match value {
             Constant::Bool(b) => Ok(b),
-            Constant::Num(_) | Constant::String(_) => Err(InvalidType),
+            Constant::Num(_) | Constant::Bytes(_) => Err(InvalidType),
         }
     }
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub(crate) struct Context {
-    /// The strings which a [`StringId`] indexes into
-    strings: Vec<String>,
+    /// The bytes which a [`BytesId`] indexes into
+    bytes: Vec<Vec<u8>>,
     /// The numbers which a [`NumId`] indexes into
     numbers: Vec<i64>,
 }
@@ -279,43 +342,43 @@ impl Context {
     #[must_use]
     pub const fn new() -> Self {
         Self {
-            strings: Vec::new(),
+            bytes: Vec::new(),
             numbers: Vec::new(),
         }
     }
 
-    /// Given a string, returns the existing [`StringId`], if the string exists in the context.
+    /// Given a slice of bytes, returns the existing [`BytesId`], if the byte slice exists in the context.
     #[must_use]
-    pub(crate) fn string_id(&self, needle: &str) -> Option<StringId> {
-        self.strings.iter().position(|s| s == needle).map(|pos| {
-            StringId(
-                STRING_START_INDEX
-                    + u16::try_from(pos).expect("greater than u16::MAX strings in context"),
+    pub(crate) fn bytes_id(&self, needle: &[u8]) -> Option<BytesId> {
+        self.bytes.iter().position(|s| s == needle).map(|pos| {
+            BytesId(
+                BYTES_START_INDEX
+                    + u16::try_from(pos).expect("greater than u16::MAX byte slices in context"),
             )
         })
     }
 
-    /// Returns the string representation given the [`StringId`].
+    /// Returns the slice of bytes given the [`BytesId`].
     #[must_use]
-    pub(crate) fn str(&self, id: StringId) -> &str {
-        assert!(is_string_ref(id.0));
-        &self.strings[usize::from(id.0 - STRING_START_INDEX)]
+    pub(crate) fn bytes(&self, id: BytesId) -> &[u8] {
+        assert!(is_bytes_ref(id.0));
+        &self.bytes[usize::from(id.0 - BYTES_START_INDEX)]
     }
 
-    /// Given a string, returns a [`StringId`].
+    /// Given a slice of bytes, returns a [`BytesId`].
     ///
-    /// If the string value already exists in the context, it will return the
-    /// existing assigned [`StringId`]. If the string value does not exist in
-    /// the context, a unique [`StringId`] will be assigned and returned.
-    pub(crate) fn get_or_insert_string_id(&mut self, needle: Cow<'_, str>) -> StringId {
-        if let Some(str_id) = self.string_id(&needle) {
-            str_id
+    /// If the slice of bytes value already exists in the context, it will return the
+    /// existing assigned [`BytesId`]. If the slice of bytes value does not exist in
+    /// the context, a unique [`BytesId`] will be assigned and returned.
+    pub(crate) fn get_or_insert_bytes_id(&mut self, needle: Cow<'_, [u8]>) -> BytesId {
+        if let Some(bytes_id) = self.bytes_id(&needle) {
+            bytes_id
         } else {
-            self.strings.push(needle.into_owned());
-            StringId(
-                STRING_START_INDEX
-                    + u16::try_from(self.strings.len() - 1)
-                        .expect("greater than u16::MAX strings in context"),
+            self.bytes.push(needle.into_owned());
+            BytesId(
+                BYTES_START_INDEX
+                    + u16::try_from(self.bytes.len() - 1)
+                        .expect("greater than u16::MAX byte slices in context"),
             )
         }
     }
@@ -375,8 +438,8 @@ impl Context {
             return Constant::Num(self.num(id));
         }
 
-        if let Ok(id) = <StringId>::try_from(id) {
-            return Constant::String(Cow::from(self.str(id)));
+        if let Ok(id) = <BytesId>::try_from(id) {
+            return Constant::Bytes(Cow::from(self.bytes(id)));
         }
 
         panic!()

@@ -18,7 +18,7 @@ use generic_array::{ArrayLength, GenericArray};
 
 use crate::{
     error::Error,
-    values::{ConstantId, Context, ScalarId, StringId},
+    values::{BytesId, ConstantId, Context, ScalarId},
     Constant,
 };
 
@@ -26,13 +26,13 @@ use crate::{
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct PredicateId(pub(crate) u16);
 
-impl From<StringId> for PredicateId {
-    fn from(value: StringId) -> Self {
+impl From<BytesId> for PredicateId {
+    fn from(value: BytesId) -> Self {
         Self(value.0)
     }
 }
 
-impl From<PredicateId> for StringId {
+impl From<PredicateId> for BytesId {
     fn from(value: PredicateId) -> Self {
         Self(value.0)
     }
@@ -42,7 +42,7 @@ impl TryFrom<ConstantId> for PredicateId {
     type Error = Error;
 
     fn try_from(value: ConstantId) -> Result<Self, Self::Error> {
-        Ok(Self::from(StringId::try_from(ScalarId::try_from(value)?)?))
+        Ok(Self::from(BytesId::try_from(ScalarId::try_from(value)?)?))
     }
 }
 

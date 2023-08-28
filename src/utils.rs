@@ -1,11 +1,11 @@
 #[cfg(all(feature = "alloc", not(feature = "std")))]
-use alloc::{borrow::Cow, string::String};
+use alloc::{borrow::Cow, string::String, vec::Vec};
 use core::{
     convert::Infallible,
     fmt::{self, Display},
 };
 #[cfg(feature = "std")]
-use std::{borrow::Cow, error, string::String};
+use std::{borrow::Cow, error, string::String, vec::Vec};
 
 use generic_array::{ArrayLength, GenericArray};
 use typenum::U1;
@@ -166,7 +166,7 @@ impl<'b> QueryValue for &'b str {
     type Ty<'a> = Cow<'a, str>;
 
     fn ty() -> ConstantTy {
-        ConstantTy::String
+        ConstantTy::Bytes
     }
 
     fn is_match(&self, other: &Self::Ty<'_>) -> bool {
@@ -178,7 +178,7 @@ impl QueryValue for String {
     type Ty<'a> = Cow<'a, str>;
 
     fn ty() -> ConstantTy {
-        ConstantTy::String
+        ConstantTy::Bytes
     }
 
     fn is_match(&self, other: &Self::Ty<'_>) -> bool {
@@ -190,7 +190,43 @@ impl<'b> QueryValue for Cow<'b, str> {
     type Ty<'a> = Cow<'a, str>;
 
     fn ty() -> ConstantTy {
-        ConstantTy::String
+        ConstantTy::Bytes
+    }
+
+    fn is_match(&self, other: &Self::Ty<'_>) -> bool {
+        *self == *other
+    }
+}
+
+impl<'b> QueryValue for &'b [u8] {
+    type Ty<'a> = Cow<'a, [u8]>;
+
+    fn ty() -> ConstantTy {
+        ConstantTy::Bytes
+    }
+
+    fn is_match(&self, other: &Self::Ty<'_>) -> bool {
+        *self == other.as_ref()
+    }
+}
+
+impl QueryValue for Vec<u8> {
+    type Ty<'a> = Cow<'a, [u8]>;
+
+    fn ty() -> ConstantTy {
+        ConstantTy::Bytes
+    }
+
+    fn is_match(&self, other: &Self::Ty<'_>) -> bool {
+        *self == other.as_ref()
+    }
+}
+
+impl<'b> QueryValue for Cow<'b, [u8]> {
+    type Ty<'a> = Cow<'a, [u8]>;
+
+    fn ty() -> ConstantTy {
+        ConstantTy::Bytes
     }
 
     fn is_match(&self, other: &Self::Ty<'_>) -> bool {
@@ -206,7 +242,23 @@ impl QueryValue for AnyStr {
     type Ty<'a> = Cow<'a, str>;
 
     fn ty() -> ConstantTy {
-        ConstantTy::String
+        ConstantTy::Bytes
+    }
+
+    fn is_match(&self, _other: &Self::Ty<'_>) -> bool {
+        true
+    }
+}
+
+/// Any string value.
+#[derive(Debug, Clone, Copy)]
+pub struct AnyBytes;
+
+impl QueryValue for AnyBytes {
+    type Ty<'a> = Cow<'a, [u8]>;
+
+    fn ty() -> ConstantTy {
+        ConstantTy::Bytes
     }
 
     fn is_match(&self, _other: &Self::Ty<'_>) -> bool {

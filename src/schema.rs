@@ -19,8 +19,8 @@ pub enum ConstantTy {
     Bool,
     /// Number
     Num,
-    /// String
-    String,
+    /// Bytes
+    Bytes,
     /// Unknown
     Unknown,
 }
@@ -30,7 +30,7 @@ impl<'a> From<Constant<'a>> for ConstantTy {
         match value {
             Constant::Bool(_) => ConstantTy::Bool,
             Constant::Num(_) => ConstantTy::Num,
-            Constant::String(_) => ConstantTy::String,
+            Constant::Bytes(_) => ConstantTy::Bytes,
         }
     }
 }

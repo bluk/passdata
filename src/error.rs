@@ -44,7 +44,7 @@ impl Error {
         match self.inner.kind {
             ErrorKind::InvalidBoolValue
             | ErrorKind::InvalidNumId
-            | ErrorKind::InvalidStringId
+            | ErrorKind::InvalidBytesId
             | ErrorKind::InvalidScalarId
             | ErrorKind::QueryResultError(_)
             | ErrorKind::MultipleMatchingFacts
@@ -104,8 +104,8 @@ pub(crate) enum ErrorKind {
     InvalidBoolValue,
     /// Cannot convert to a number ID
     InvalidNumId,
-    /// Cannot convert to a string ID
-    InvalidStringId,
+    /// Cannot convert to a bytes ID
+    InvalidBytesId,
     /// Cannot convert to a scalar ID
     InvalidScalarId,
     /// Query result error
@@ -128,7 +128,7 @@ impl error::Error for ErrorKind {
         match self {
             ErrorKind::InvalidBoolValue
             | ErrorKind::InvalidNumId
-            | ErrorKind::InvalidStringId
+            | ErrorKind::InvalidBytesId
             | ErrorKind::InvalidScalarId
             | ErrorKind::MultipleMatchingFacts
             | ErrorKind::DuplicateSchema
@@ -145,7 +145,7 @@ impl Display for ErrorKind {
         match self {
             ErrorKind::InvalidBoolValue => f.write_str("should be a boolean reference"),
             ErrorKind::InvalidNumId => f.write_str("should be a number reference ID"),
-            ErrorKind::InvalidStringId => f.write_str("should be a string reference ID"),
+            ErrorKind::InvalidBytesId => f.write_str("should be a bytes reference ID"),
             ErrorKind::InvalidScalarId => f.write_str("should be a scalar reference ID"),
             ErrorKind::MultipleMatchingFacts => f.write_str("should be a single matching fact"),
             ErrorKind::QueryResultError(e) => Display::fmt(e, f),
@@ -164,7 +164,7 @@ impl fmt::Debug for ErrorKind {
         match self {
             ErrorKind::InvalidBoolValue => f.write_str("should be a boolean reference"),
             ErrorKind::InvalidNumId => f.write_str("should be a number reference ID"),
-            ErrorKind::InvalidStringId => f.write_str("should be a string reference ID"),
+            ErrorKind::InvalidBytesId => f.write_str("should be a bytes reference ID"),
             ErrorKind::InvalidScalarId => f.write_str("should be a scalar reference ID"),
             ErrorKind::MultipleMatchingFacts => f.write_str("should be a single matching fact"),
             ErrorKind::QueryResultError(e) => fmt::Debug::fmt(e, f),
