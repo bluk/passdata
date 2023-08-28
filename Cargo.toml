@@ -1,13 +1,8 @@
 [package]
-name = "passdata"
-version = "0.0.1"
-edition = "2021"
-license = "MIT OR Apache-2.0"
 authors = ["Bryant Luk <code@bryantluk.com>"]
 description = "Authentication and authorization data in a logic programming language."
-repository = "https://github.com/bluk/passdata"
 documentation = "https://docs.rs/passdata/"
-readme = "README.md"
+edition = "2021"
 include = [
   "src/**/*.rs",
   "Cargo.toml",
@@ -15,6 +10,11 @@ include = [
   "LICENSE-APACHE",
   "LICENSE-MIT",
 ]
+license = "MIT OR Apache-2.0"
+name = "passdata"
+repository = "https://github.com/bluk/passdata"
+readme = "README.md"
+version = "0.0.1"
 
 [dependencies]
 either = { version ="1.9.0", default-features = false }
