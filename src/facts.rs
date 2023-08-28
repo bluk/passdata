@@ -133,12 +133,12 @@ impl error::Error for FactTermsError {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FactTerms<'a> {
+pub struct FactTerms<'a, 'c> {
     pub(crate) constants: &'a [ConstantId],
-    pub(crate) context: &'a Context,
+    pub(crate) context: &'a Context<'c>,
 }
 
-impl<'a> FactTerms<'a> {
+impl<'a, 'c> FactTerms<'a, 'c> {
     #[must_use]
     pub fn to_vec(&self) -> Vec<Constant<'a>> {
         self.constants

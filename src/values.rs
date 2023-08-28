@@ -330,39 +330,65 @@ impl<'a> TryFrom<Constant<'a>> for bool {
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub(crate) struct Context {
+pub(crate) struct Context<'a> {
     /// The bytes which a [`BytesId`] indexes into
-    bytes: Vec<Vec<u8>>,
+    bytes: Cow<'a, [u8]>,
     /// The numbers which a [`NumId`] indexes into
-    numbers: Vec<i64>,
+    numbers: Cow<'a, [i64]>,
 }
 
-impl Context {
+impl<'a> Context<'a> {
     /// Create an empty context.
     #[must_use]
     pub const fn new() -> Self {
         Self {
-            bytes: Vec::new(),
-            numbers: Vec::new(),
+            bytes: Cow::Borrowed(&[0, 0]),
+            numbers: Cow::Owned(Vec::new()),
+        }
+    }
+
+    fn byte_slices_len(&self) -> usize {
+        usize::from(u16::from_be_bytes([self.bytes[0], self.bytes[1]]))
+    }
+
+    fn byte_slice(&self, needle: usize) -> &[u8] {
+        let mut bytes = &self.bytes[2..];
+        let mut cur = 0;
+        loop {
+            let len = usize::from(u16::from_be_bytes([bytes[0], bytes[1]]));
+            let slice = &bytes[2..2 + len];
+            if cur == needle {
+                return slice;
+            }
+
+            bytes = &bytes[2 + len..];
+            cur += 1;
         }
     }
 
     /// Given a slice of bytes, returns the existing [`BytesId`], if the byte slice exists in the context.
     #[must_use]
     pub(crate) fn bytes_id(&self, needle: &[u8]) -> Option<BytesId> {
-        self.bytes.iter().position(|s| s == needle).map(|pos| {
-            BytesId(
-                BYTES_START_INDEX
-                    + u16::try_from(pos).expect("greater than u16::MAX byte slices in context"),
-            )
-        })
+        let len = self.byte_slices_len();
+        (0..len)
+            .map(|i| self.byte_slice(i))
+            .position(|s| s == needle)
+            .map(|pos| {
+                BytesId(
+                    BYTES_START_INDEX
+                        + u16::try_from(pos).expect("greater than u16::MAX byte slices in context"),
+                )
+            })
     }
 
     /// Returns the slice of bytes given the [`BytesId`].
     #[must_use]
     pub(crate) fn bytes(&self, id: BytesId) -> &[u8] {
         assert!(is_bytes_ref(id.0));
-        &self.bytes[usize::from(id.0 - BYTES_START_INDEX)]
+        let idx = usize::from(id.0 - BYTES_START_INDEX);
+        let len = self.byte_slices_len();
+        assert!(idx < len);
+        self.byte_slice(idx)
     }
 
     /// Given a slice of bytes, returns a [`BytesId`].
@@ -370,16 +396,21 @@ impl Context {
     /// If the slice of bytes value already exists in the context, it will return the
     /// existing assigned [`BytesId`]. If the slice of bytes value does not exist in
     /// the context, a unique [`BytesId`] will be assigned and returned.
-    pub(crate) fn get_or_insert_bytes_id(&mut self, needle: Cow<'_, [u8]>) -> BytesId {
-        if let Some(bytes_id) = self.bytes_id(&needle) {
+    pub(crate) fn get_or_insert_bytes_id(&mut self, needle: &[u8]) -> BytesId {
+        if let Some(bytes_id) = self.bytes_id(needle) {
             bytes_id
         } else {
-            self.bytes.push(needle.into_owned());
-            BytesId(
-                BYTES_START_INDEX
-                    + u16::try_from(self.bytes.len() - 1)
-                        .expect("greater than u16::MAX byte slices in context"),
-            )
+            let bytes = self.bytes.to_mut();
+            let needle_len = u16::try_from(needle.len()).unwrap();
+            bytes.extend(needle_len.to_be_bytes());
+            bytes.extend(needle.as_ref());
+
+            let len = u16::from_be_bytes([bytes[0], bytes[1]]) + 1;
+            let len_bytes = len.to_be_bytes();
+            bytes[0] = len_bytes[0];
+            bytes[1] = len_bytes[1];
+
+            BytesId(BYTES_START_INDEX + len - 1)
         }
     }
 
@@ -410,7 +441,8 @@ impl Context {
         if let Some(id) = self.num_id(needle) {
             id
         } else {
-            self.numbers.push(needle);
+            let numbers = self.numbers.to_mut();
+            numbers.push(needle);
             NumId(
                 NUMBER_START_INDEX
                     + u16::try_from(self.numbers.len() - 1)
@@ -442,6 +474,6 @@ impl Context {
             return Constant::Bytes(Cow::from(self.bytes(id)));
         }
 
-        panic!()
+        unreachable!("unknown constant type")
     }
 }

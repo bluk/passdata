@@ -20,11 +20,7 @@
 #[cfg(all(feature = "alloc", not(feature = "std")))]
 extern crate alloc;
 
-#[cfg(all(feature = "alloc", not(feature = "std")))]
-use alloc::borrow::Cow;
 use core::iter;
-#[cfg(feature = "std")]
-use std::borrow::Cow;
 
 use either::Either;
 use generic_array::{functional::FunctionalSequence, ArrayLength, GenericArray};
@@ -49,16 +45,16 @@ pub use values::Constant;
 
 /// Data for the logic program.
 #[derive(Debug)]
-pub struct Passdata<'s> {
+pub struct Passdata<'s, 'c> {
     /// The program's types
     schema: &'s Schema<'s>,
     /// Values in context
-    context: Context,
+    context: Context<'c>,
     /// Facts explictly added to the data
     edb: Facts,
 }
 
-impl<'s> Passdata<'s> {
+impl<'s, 'c> Passdata<'s, 'c> {
     /// Constructs with empty data.
     #[must_use]
     pub const fn new(schema: &'s Schema<'s>) -> Self {
@@ -85,7 +81,10 @@ impl<'s> Passdata<'s> {
     /// # Errors
     ///
     /// - if the predicate is unknown.
-    pub fn edb_iter(&self, predicate: &str) -> Result<impl Iterator<Item = FactTerms<'_>> + '_> {
+    pub fn edb_iter(
+        &self,
+        predicate: &str,
+    ) -> Result<impl Iterator<Item = FactTerms<'_, '_>> + '_> {
         let Some(tys) = self.schema.get_tys(predicate) else {
             return Err(Error::with_kind(ErrorKind::UnknownPredicate));
         };
@@ -113,32 +112,26 @@ impl<'s> Passdata<'s> {
     /// # Errors
     ///
     /// Returns an error if the values do not match the expected types for the predicate.
-    pub fn add_fact<'a, P, T>(&mut self, predicate: P, constants: T) -> Result<()>
+    pub fn add_fact<'a, T>(&mut self, predicate: &str, constants: T) -> Result<()>
     where
-        P: Into<Cow<'a, str>>,
         T: IntoArray<Constant<'a>>,
         <T as IntoArray<Constant<'a>>>::Length: ArrayLength<ConstantTy>,
         <T as IntoArray<Constant<'a>>>::Length: ArrayLength<ConstantId>,
     {
-        let predicate = predicate.into();
         let constants = constants.into_array();
 
         let tys = constants.clone().map(ConstantTy::from);
-        self.schema.validate_tys(&predicate, &tys)?;
+        self.schema.validate_tys(predicate, &tys)?;
 
         let mut v: GenericArray<ConstantId, T::Length> = GenericArray::default();
 
-        let predicate = match predicate {
-            Cow::Borrowed(p) => Cow::Borrowed(p.as_bytes()),
-            Cow::Owned(p) => Cow::Owned(p.into_bytes()),
-        };
-        let pred = PredicateId::from(self.context.get_or_insert_bytes_id(predicate));
+        let pred = PredicateId::from(self.context.get_or_insert_bytes_id(predicate.as_bytes()));
 
         for (idx, c) in constants.into_iter().enumerate() {
             v[idx] = match c {
                 Constant::Bool(value) => ScalarId::from(value).into(),
                 Constant::Num(value) => self.context.get_or_insert_num_id(value).into(),
-                Constant::Bytes(value) => self.context.get_or_insert_bytes_id(value).into(),
+                Constant::Bytes(value) => self.context.get_or_insert_bytes_id(&value).into(),
             };
         }
 
@@ -237,9 +230,9 @@ mod tests {
     use super::*;
 
     #[cfg(all(feature = "alloc", not(feature = "std")))]
-    use alloc::{string::String, vec};
+    use alloc::{borrow::Cow, string::String, vec};
     #[cfg(feature = "std")]
-    use std::{string::String, vec};
+    use std::{borrow::Cow, string::String, vec};
 
     use crate::utils::{AnyBool, AnyBytes, AnyNum, AnyStr};
 
