@@ -334,7 +334,7 @@ pub(crate) struct Context<'a> {
     /// The bytes which a [`BytesId`] indexes into
     bytes: Cow<'a, [u8]>,
     /// The numbers which a [`NumId`] indexes into
-    numbers: Cow<'a, [i64]>,
+    numbers: Cow<'a, [u8]>,
 }
 
 impl<'a> Context<'a> {
@@ -343,7 +343,7 @@ impl<'a> Context<'a> {
     pub const fn new() -> Self {
         Self {
             bytes: Cow::Borrowed(&[0, 0]),
-            numbers: Cow::Owned(Vec::new()),
+            numbers: Cow::Borrowed(&[0, 0]),
         }
     }
 
@@ -351,13 +351,13 @@ impl<'a> Context<'a> {
         usize::from(u16::from_be_bytes([self.bytes[0], self.bytes[1]]))
     }
 
-    fn byte_slice(&self, needle: usize) -> &[u8] {
+    fn byte_slice(&self, idx: usize) -> &[u8] {
         let mut bytes = &self.bytes[2..];
         let mut cur = 0;
         loop {
             let len = usize::from(u16::from_be_bytes([bytes[0], bytes[1]]));
             let slice = &bytes[2..2 + len];
-            if cur == needle {
+            if cur == idx {
                 return slice;
             }
 
@@ -414,22 +414,50 @@ impl<'a> Context<'a> {
         }
     }
 
+    fn num_len(&self) -> usize {
+        usize::from(u16::from_be_bytes([self.numbers[0], self.numbers[1]]))
+    }
+
+    fn num_value(&self, idx: usize) -> i64 {
+        let mut numbers = &self.numbers[2..];
+        let mut cur = 0;
+        loop {
+            let value = i64::from_be_bytes([
+                numbers[0], numbers[1], numbers[2], numbers[3], numbers[4], numbers[5], numbers[6],
+                numbers[7],
+            ]);
+            if cur == idx {
+                return value;
+            }
+
+            numbers = &numbers[8..];
+            cur += 1;
+        }
+    }
+
     /// Given a `i64` value, returns the existing [`NumId`], if the `i64` exists in the context.
     #[must_use]
     pub(crate) fn num_id(&self, needle: i64) -> Option<NumId> {
-        self.numbers.iter().position(|s| *s == needle).map(|pos| {
-            NumId(
-                NUMBER_START_INDEX
-                    + u16::try_from(pos).expect("greater than u16::MAX numbers in context"),
-            )
-        })
+        let len = self.num_len();
+        (0..len)
+            .map(|i| self.num_value(i))
+            .position(|s| s == needle)
+            .map(|pos| {
+                NumId(
+                    NUMBER_START_INDEX
+                        + u16::try_from(pos).expect("greater than u16::MAX numbers in context"),
+                )
+            })
     }
 
     /// Returns the number value given the [`NumId`].
     #[must_use]
     pub(crate) fn num(&self, id: NumId) -> i64 {
         assert!(is_number_ref(id.0));
-        self.numbers[usize::from(id.0 - NUMBER_START_INDEX)]
+        let idx = usize::from(id.0 - NUMBER_START_INDEX);
+        let len = self.num_len();
+        assert!(idx < len);
+        self.num_value(idx)
     }
 
     /// Given a number, returns a [`NumId`].
@@ -442,12 +470,14 @@ impl<'a> Context<'a> {
             id
         } else {
             let numbers = self.numbers.to_mut();
-            numbers.push(needle);
-            NumId(
-                NUMBER_START_INDEX
-                    + u16::try_from(self.numbers.len() - 1)
-                        .expect("greater than u16::MAX numbers in context"),
-            )
+            numbers.extend(needle.to_be_bytes());
+
+            let len = u16::from_be_bytes([numbers[0], numbers[1]]) + 1;
+            let len_bytes = len.to_be_bytes();
+            numbers[0] = len_bytes[0];
+            numbers[1] = len_bytes[1];
+
+            NumId(NUMBER_START_INDEX + len - 1)
         }
     }
 
