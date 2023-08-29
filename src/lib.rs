@@ -131,7 +131,7 @@ impl<'s, 'c> Passdata<'s, 'c> {
             v[idx] = match c {
                 Constant::Bool(value) => ScalarId::from(value).into(),
                 Constant::Num(value) => self.context.get_or_insert_num_id(value).into(),
-                Constant::Bytes(value) => self.context.get_or_insert_bytes_id(&value).into(),
+                Constant::Bytes(value) => self.context.get_or_insert_bytes_id(value).into(),
             };
         }
 
@@ -230,9 +230,9 @@ mod tests {
     use super::*;
 
     #[cfg(all(feature = "alloc", not(feature = "std")))]
-    use alloc::{borrow::Cow, string::String, vec};
+    use alloc::{string::String, vec};
     #[cfg(feature = "std")]
-    use std::{borrow::Cow, string::String, vec};
+    use std::{string::String, vec};
 
     use crate::utils::{AnyBool, AnyBytes, AnyNum, AnyStr};
 
@@ -263,7 +263,7 @@ mod tests {
         assert_eq!(
             iter.next().map(|t| t.to_vec()),
             Some(vec![
-                Constant::Bytes(Cow::from("xyz".as_bytes())),
+                Constant::Bytes("xyz".as_bytes()),
                 Constant::Num(1234),
                 Constant::Bool(false)
             ])
@@ -271,7 +271,7 @@ mod tests {
         assert_eq!(
             iter.next().map(|t| t.to_vec()),
             Some(vec![
-                Constant::Bytes(Cow::from("xyz".as_bytes())),
+                Constant::Bytes("xyz".as_bytes()),
                 Constant::Num(5678),
                 Constant::Bool(true)
             ])
@@ -294,7 +294,7 @@ mod tests {
         assert_eq!(
             dst,
             vec![
-                Constant::Bytes(Cow::from("xyz".as_bytes())),
+                Constant::Bytes("xyz".as_bytes()),
                 Constant::Num(1234),
                 Constant::Bool(false)
             ]
@@ -304,7 +304,7 @@ mod tests {
         assert_eq!(
             dst,
             &[
-                Constant::Bytes(Cow::from("xyz".as_bytes())),
+                Constant::Bytes("xyz".as_bytes()),
                 Constant::Num(5678),
                 Constant::Bool(true)
             ]
@@ -337,17 +337,17 @@ mod tests {
         data.add_fact("c", ["abc".into(), 7.into(), Constant::from(true)])?;
 
         let mut y = data.query_edb("c", (AnyStr, AnyNum, AnyBool))?;
-        assert_eq!(y.next(), Some(("xyz".into(), 1234, false)));
-        assert_eq!(y.next(), Some(("abc".into(), 7, true)));
+        assert_eq!(y.next(), Some(("xyz", 1234, false)));
+        assert_eq!(y.next(), Some(("abc", 7, true)));
         assert_eq!(y.next(), None);
 
         let mut y = data.query_edb("c", (AnyBytes, AnyNum, AnyBool))?;
-        assert_eq!(y.next(), Some(("xyz".as_bytes().into(), 1234, false)));
-        assert_eq!(y.next(), Some(("abc".as_bytes().into(), 7, true)));
+        assert_eq!(y.next(), Some(("xyz".as_bytes(), 1234, false)));
+        assert_eq!(y.next(), Some(("abc".as_bytes(), 7, true)));
         assert_eq!(y.next(), None);
 
         let mut y = data.query_edb("c", ("xyz", 1234, false))?;
-        assert_eq!(y.next(), Some(("xyz".into(), 1234, false)));
+        assert_eq!(y.next(), Some(("xyz", 1234, false)));
         assert_eq!(y.next(), None);
 
         let mut y = data.query_edb("c", ("xyz", 7, AnyBool))?;
@@ -359,7 +359,7 @@ mod tests {
         assert_eq!(y.next(), None);
 
         let mut y = data.query_edb("c", ("abc", AnyConstant, AnyConstant))?;
-        assert_eq!(y.next(), Some(("abc".into(), 7.into(), true.into())));
+        assert_eq!(y.next(), Some(("abc", 7.into(), true.into())));
         assert_eq!(y.next(), None);
 
         Ok(())
@@ -419,11 +419,11 @@ mod tests {
 
         assert_eq!(
             data.query_only_one_edb("b", ("xyz", 1234, false)),
-            Ok(Some(("xyz".into(), 1234, false)))
+            Ok(Some(("xyz", 1234, false)))
         );
         assert_eq!(
             data.query_only_one_edb("b", ("xyz", 1234, AnyBool)),
-            Ok(Some(("xyz".into(), 1234, false)))
+            Ok(Some(("xyz", 1234, false)))
         );
         assert_eq!(
             data.query_only_one_edb("b", ("xyz", AnyNum, AnyBool)),
@@ -433,16 +433,16 @@ mod tests {
         assert_eq!(data.query_only_one_edb("c", AnyNum), Ok(Some(1234)));
         assert_eq!(data.query_only_one_edb("c", 5678), Ok(None));
 
-        assert_eq!(data.query_only_one_edb("d", AnyStr), Ok(Some("xyz".into())));
+        assert_eq!(data.query_only_one_edb("d", AnyStr), Ok(Some("xyz")));
         assert_eq!(
             data.query_only_one_edb("d", AnyBytes),
-            Ok(Some("xyz".as_bytes().into()))
+            Ok(Some("xyz".as_bytes()))
         );
         assert_eq!(data.query_only_one_edb("d", "abc"), Ok(None));
-        assert_eq!(data.query_only_one_edb("d", "xyz"), Ok(Some("xyz".into())));
+        assert_eq!(data.query_only_one_edb("d", "xyz"), Ok(Some("xyz")));
         assert_eq!(
             data.query_only_one_edb("d", String::from("xyz")),
-            Ok(Some("xyz".into()))
+            Ok(Some("xyz"))
         );
 
         assert_eq!(

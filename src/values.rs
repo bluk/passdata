@@ -11,10 +11,10 @@
 //! absolute limit to the amount of data that can be encoded.
 
 #[cfg(all(feature = "alloc", not(feature = "std")))]
-use alloc::{borrow::Cow, string::String, vec::Vec};
+use alloc::borrow::Cow;
 use core::fmt;
 #[cfg(feature = "std")]
-use std::{borrow::Cow, error, string::String, vec::Vec};
+use std::{borrow::Cow, error};
 
 use crate::ConstantTy;
 
@@ -91,7 +91,7 @@ pub enum Constant<'a> {
     /// Number
     Num(i64),
     /// Byte string
-    Bytes(Cow<'a, [u8]>),
+    Bytes(&'a [u8]),
 }
 
 impl<'a> Default for Constant<'a> {
@@ -114,39 +114,12 @@ impl<'a> From<i64> for Constant<'a> {
 
 impl<'a> From<&'a str> for Constant<'a> {
     fn from(value: &'a str) -> Self {
-        Constant::Bytes(Cow::from(value.as_bytes()))
-    }
-}
-
-impl<'a> From<String> for Constant<'a> {
-    fn from(value: String) -> Self {
-        Constant::Bytes(Cow::from(value.into_bytes()))
-    }
-}
-
-impl<'a> From<Cow<'a, str>> for Constant<'a> {
-    fn from(value: Cow<'a, str>) -> Self {
-        match value {
-            Cow::Borrowed(value) => Constant::Bytes(Cow::from(value.as_bytes())),
-            Cow::Owned(value) => Constant::Bytes(Cow::from(value.into_bytes())),
-        }
+        Constant::Bytes(value.as_bytes())
     }
 }
 
 impl<'a> From<&'a [u8]> for Constant<'a> {
     fn from(value: &'a [u8]) -> Self {
-        Constant::Bytes(Cow::from(value))
-    }
-}
-
-impl<'a> From<Vec<u8>> for Constant<'a> {
-    fn from(value: Vec<u8>) -> Self {
-        Constant::Bytes(Cow::from(value))
-    }
-}
-
-impl<'a> From<Cow<'a, [u8]>> for Constant<'a> {
-    fn from(value: Cow<'a, [u8]>) -> Self {
         Constant::Bytes(value)
     }
 }
@@ -174,38 +147,7 @@ impl fmt::Debug for InvalidType {
     }
 }
 
-impl<'a> TryFrom<Constant<'a>> for Cow<'a, str> {
-    type Error = InvalidType;
-
-    fn try_from(value: Constant<'a>) -> Result<Self, Self::Error> {
-        match value {
-            Constant::Bool(_) | Constant::Num(_) => Err(InvalidType),
-            Constant::Bytes(bytes) => match bytes {
-                Cow::Borrowed(bytes) => Ok(Cow::from(
-                    core::str::from_utf8(bytes).map_err(|_| InvalidType)?,
-                )),
-                Cow::Owned(bytes) => Ok(Cow::from(
-                    String::from_utf8(bytes).map_err(|_| InvalidType)?,
-                )),
-            },
-        }
-    }
-}
-
-impl<'a> TryFrom<Constant<'a>> for String {
-    type Error = InvalidType;
-
-    fn try_from(value: Constant<'a>) -> Result<Self, Self::Error> {
-        match value {
-            Constant::Bool(_) | Constant::Num(_) => Err(InvalidType),
-            Constant::Bytes(bytes) => {
-                Ok(String::from_utf8(bytes.into_owned()).map_err(|_| InvalidType)?)
-            }
-        }
-    }
-}
-
-impl<'a> TryFrom<Constant<'a>> for Cow<'a, [u8]> {
+impl<'a> TryFrom<Constant<'a>> for &'a [u8] {
     type Error = InvalidType;
 
     fn try_from(value: Constant<'a>) -> Result<Self, Self::Error> {
@@ -216,13 +158,37 @@ impl<'a> TryFrom<Constant<'a>> for Cow<'a, [u8]> {
     }
 }
 
-impl<'a> TryFrom<Constant<'a>> for Vec<u8> {
+impl<'a> TryFrom<Constant<'a>> for Cow<'a, [u8]> {
     type Error = InvalidType;
 
     fn try_from(value: Constant<'a>) -> Result<Self, Self::Error> {
         match value {
             Constant::Bool(_) | Constant::Num(_) => Err(InvalidType),
-            Constant::Bytes(bytes) => Ok(bytes.into_owned()),
+            Constant::Bytes(bytes) => Ok(Cow::from(bytes)),
+        }
+    }
+}
+
+impl<'a> TryFrom<Constant<'a>> for &'a str {
+    type Error = InvalidType;
+
+    fn try_from(value: Constant<'a>) -> Result<Self, Self::Error> {
+        match value {
+            Constant::Bool(_) | Constant::Num(_) => Err(InvalidType),
+            Constant::Bytes(bytes) => Ok(core::str::from_utf8(bytes).map_err(|_| InvalidType)?),
+        }
+    }
+}
+
+impl<'a> TryFrom<Constant<'a>> for Cow<'a, str> {
+    type Error = InvalidType;
+
+    fn try_from(value: Constant<'a>) -> Result<Self, Self::Error> {
+        match value {
+            Constant::Bool(_) | Constant::Num(_) => Err(InvalidType),
+            Constant::Bytes(bytes) => Ok(Cow::Borrowed(
+                core::str::from_utf8(bytes).map_err(|_| InvalidType)?,
+            )),
         }
     }
 }
@@ -423,7 +389,7 @@ impl<'a> Context<'a> {
             ConstantTy::Num => {
                 Constant::Num(i64::from_be_bytes(<[u8; 8]>::try_from(value).unwrap()))
             }
-            ConstantTy::Bytes => Constant::Bytes(Cow::from(value)),
+            ConstantTy::Bytes => Constant::Bytes(value),
         }
     }
 }

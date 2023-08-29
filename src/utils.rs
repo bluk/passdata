@@ -58,7 +58,7 @@ macro_rules! impl_into_array_single_ty {
     };
 }
 
-impl_into_array_single_ty!(bool, i64, String, &'a str, Cow<'a, str>);
+impl_into_array_single_ty!(bool, i64, &'a str);
 
 macro_rules! impl_into_array_tuple {
     ($i0:ident) => {};
@@ -163,67 +163,67 @@ impl QueryValue for AnyNum {
 }
 
 impl<'b> QueryValue for &'b str {
-    type Ty<'a> = Cow<'a, str>;
+    type Ty<'a> = &'a str;
 
     fn ty() -> ConstantTy {
         ConstantTy::Bytes
     }
 
     fn is_match(&self, other: &Self::Ty<'_>) -> bool {
-        *self == *other
+        self == other
     }
 }
 
 impl QueryValue for String {
-    type Ty<'a> = Cow<'a, str>;
+    type Ty<'a> = &'a str;
 
     fn ty() -> ConstantTy {
         ConstantTy::Bytes
     }
 
     fn is_match(&self, other: &Self::Ty<'_>) -> bool {
-        *self == *other
+        self == *other
     }
 }
 
 impl<'b> QueryValue for Cow<'b, str> {
-    type Ty<'a> = Cow<'a, str>;
+    type Ty<'a> = &'a str;
 
     fn ty() -> ConstantTy {
         ConstantTy::Bytes
     }
 
     fn is_match(&self, other: &Self::Ty<'_>) -> bool {
-        *self == *other
+        self == *other
     }
 }
 
 impl<'b> QueryValue for &'b [u8] {
-    type Ty<'a> = Cow<'a, [u8]>;
+    type Ty<'a> = &'a [u8];
 
     fn ty() -> ConstantTy {
         ConstantTy::Bytes
     }
 
     fn is_match(&self, other: &Self::Ty<'_>) -> bool {
-        *self == other.as_ref()
+        self == other
     }
 }
 
 impl QueryValue for Vec<u8> {
-    type Ty<'a> = Cow<'a, [u8]>;
+    type Ty<'a> = &'a [u8];
 
     fn ty() -> ConstantTy {
         ConstantTy::Bytes
     }
 
     fn is_match(&self, other: &Self::Ty<'_>) -> bool {
-        *self == other.as_ref()
+        self == other
     }
 }
 
 impl<'b> QueryValue for Cow<'b, [u8]> {
-    type Ty<'a> = Cow<'a, [u8]>;
+    type Ty<'a> = &'a [u8];
 
     fn ty() -> ConstantTy {
         ConstantTy::Bytes
@@ -239,7 +239,7 @@ impl<'b> QueryValue for Cow<'b, [u8]> {
 pub struct AnyStr;
 
 impl QueryValue for AnyStr {
-    type Ty<'a> = Cow<'a, str>;
+    type Ty<'a> = &'a str;
 
     fn ty() -> ConstantTy {
         ConstantTy::Bytes
@@ -255,7 +255,7 @@ impl QueryValue for AnyStr {
 pub struct AnyBytes;
 
 impl QueryValue for AnyBytes {
-    type Ty<'a> = Cow<'a, [u8]>;
+    type Ty<'a> = &'a [u8];
 
     fn ty() -> ConstantTy {
         ConstantTy::Bytes
