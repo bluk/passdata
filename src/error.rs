@@ -42,11 +42,7 @@ impl Error {
     #[inline]
     pub(crate) fn is_schema_error(&self) -> bool {
         match self.inner.kind {
-            ErrorKind::InvalidBoolValue
-            | ErrorKind::InvalidNumId
-            | ErrorKind::InvalidBytesId
-            | ErrorKind::InvalidScalarId
-            | ErrorKind::QueryResultError(_)
+            ErrorKind::QueryResultError(_)
             | ErrorKind::MultipleMatchingFacts
             | ErrorKind::DuplicateSchema
             | ErrorKind::FactTermsError(_) => false,
@@ -100,14 +96,6 @@ impl fmt::Debug for ErrorImpl {
 #[allow(clippy::module_name_repetitions)]
 #[derive(PartialEq)]
 pub(crate) enum ErrorKind {
-    /// Cannot convert to a bool
-    InvalidBoolValue,
-    /// Cannot convert to a number ID
-    InvalidNumId,
-    /// Cannot convert to a bytes ID
-    InvalidBytesId,
-    /// Cannot convert to a scalar ID
-    InvalidScalarId,
     /// Query result error
     QueryResultError(QueryResultError),
     /// If there are multiple matching facts
@@ -126,11 +114,7 @@ pub(crate) enum ErrorKind {
 impl error::Error for ErrorKind {
     fn source(&self) -> Option<&(dyn error::Error + 'static)> {
         match self {
-            ErrorKind::InvalidBoolValue
-            | ErrorKind::InvalidNumId
-            | ErrorKind::InvalidBytesId
-            | ErrorKind::InvalidScalarId
-            | ErrorKind::MultipleMatchingFacts
+            ErrorKind::MultipleMatchingFacts
             | ErrorKind::DuplicateSchema
             | ErrorKind::UnknownPredicate
             | ErrorKind::MismatchSchemaTys => None,
@@ -143,10 +127,6 @@ impl error::Error for ErrorKind {
 impl Display for ErrorKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ErrorKind::InvalidBoolValue => f.write_str("should be a boolean reference"),
-            ErrorKind::InvalidNumId => f.write_str("should be a number reference ID"),
-            ErrorKind::InvalidBytesId => f.write_str("should be a bytes reference ID"),
-            ErrorKind::InvalidScalarId => f.write_str("should be a scalar reference ID"),
             ErrorKind::MultipleMatchingFacts => f.write_str("should be a single matching fact"),
             ErrorKind::QueryResultError(e) => Display::fmt(e, f),
             ErrorKind::DuplicateSchema => {
@@ -162,10 +142,6 @@ impl Display for ErrorKind {
 impl fmt::Debug for ErrorKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ErrorKind::InvalidBoolValue => f.write_str("should be a boolean reference"),
-            ErrorKind::InvalidNumId => f.write_str("should be a number reference ID"),
-            ErrorKind::InvalidBytesId => f.write_str("should be a bytes reference ID"),
-            ErrorKind::InvalidScalarId => f.write_str("should be a scalar reference ID"),
             ErrorKind::MultipleMatchingFacts => f.write_str("should be a single matching fact"),
             ErrorKind::QueryResultError(e) => fmt::Debug::fmt(e, f),
             ErrorKind::DuplicateSchema => {

@@ -16,82 +16,18 @@ use core::fmt;
 #[cfg(feature = "std")]
 use std::{borrow::Cow, error, string::String, vec::Vec};
 
-use crate::error::{Error, ErrorKind, Result};
+use crate::ConstantTy;
 
 const BOOL_FALSE_INDEX: u16 = 0;
 const BOOL_TRUE_INDEX: u16 = 1;
-const BYTES_START_INDEX: u16 = 32;
-const BYTES_INCLUSIVE_END_INDEX: u16 = 513;
-const BYTES_INDEX_RANGE: core::ops::RangeInclusive<u16> =
-    BYTES_START_INDEX..=BYTES_INCLUSIVE_END_INDEX;
-const NUMBER_START_INDEX: u16 = 514;
-const NUMBER_INCLUSIVE_END_INDEX: u16 = 765;
-const NUMBER_INDEX_RANGE: core::ops::RangeInclusive<u16> =
-    NUMBER_START_INDEX..=NUMBER_INCLUSIVE_END_INDEX;
-
-#[inline]
-const fn is_bool_ref(value: u16) -> bool {
-    value == BOOL_FALSE_INDEX || value == BOOL_TRUE_INDEX
-}
-
-#[inline]
-fn is_bytes_ref(value: u16) -> bool {
-    BYTES_INDEX_RANGE.contains(&value)
-}
-
-#[inline]
-fn is_number_ref(value: u16) -> bool {
-    NUMBER_INDEX_RANGE.contains(&value)
-}
-
-#[inline]
-fn is_scalar_ref(value: u16) -> bool {
-    is_bool_ref(value) || is_bytes_ref(value) || is_number_ref(value)
-}
-
-impl TryFrom<ScalarId> for bool {
-    type Error = Error;
-
-    fn try_from(value: ScalarId) -> Result<Self> {
-        match value.0 {
-            BOOL_FALSE_INDEX => Ok(false),
-            BOOL_TRUE_INDEX => Ok(true),
-            _ => Err(Error::with_kind(ErrorKind::InvalidBoolValue)),
-        }
-    }
-}
 
 /// An interned bytes reference.
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct BytesId(pub(crate) u16);
 
-impl TryFrom<ScalarId> for BytesId {
-    type Error = Error;
-
-    fn try_from(value: ScalarId) -> Result<Self> {
-        if is_bytes_ref(value.0) {
-            Ok(BytesId(value.0))
-        } else {
-            Err(Error::with_kind(ErrorKind::InvalidBytesId))
-        }
-    }
-}
-
 /// An interned number reference.
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct NumId(pub(crate) u16);
-
-impl TryFrom<ScalarId> for NumId {
-    type Error = Error;
-
-    fn try_from(value: ScalarId) -> Result<Self> {
-        if is_number_ref(value.0) {
-            Ok(NumId(value.0))
-        } else {
-            Err(Error::with_kind(ErrorKind::InvalidNumId))
-        }
-    }
-}
 
 /// A scalar reference.
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
@@ -109,27 +45,13 @@ impl From<bool> for ScalarId {
 
 impl From<NumId> for ScalarId {
     fn from(value: NumId) -> Self {
-        debug_assert!(is_number_ref(value.0));
         Self(value.0)
     }
 }
 
 impl From<BytesId> for ScalarId {
     fn from(value: BytesId) -> Self {
-        debug_assert!(is_bytes_ref(value.0));
         Self(value.0)
-    }
-}
-
-impl TryFrom<ConstantId> for ScalarId {
-    type Error = Error;
-
-    fn try_from(value: ConstantId) -> Result<Self> {
-        if is_scalar_ref(value.0) {
-            return Ok(ScalarId(value.0));
-        }
-
-        Err(Error::with_kind(ErrorKind::InvalidScalarId))
     }
 }
 
@@ -145,14 +67,12 @@ impl From<bool> for ConstantId {
 
 impl From<NumId> for ConstantId {
     fn from(value: NumId) -> Self {
-        debug_assert!(is_number_ref(value.0));
         Self(value.0)
     }
 }
 
 impl From<BytesId> for ConstantId {
     fn from(value: BytesId) -> Self {
-        debug_assert!(is_bytes_ref(value.0));
         Self(value.0)
     }
 }
@@ -257,7 +177,7 @@ impl fmt::Debug for InvalidType {
 impl<'a> TryFrom<Constant<'a>> for Cow<'a, str> {
     type Error = InvalidType;
 
-    fn try_from(value: Constant<'a>) -> core::result::Result<Self, Self::Error> {
+    fn try_from(value: Constant<'a>) -> Result<Self, Self::Error> {
         match value {
             Constant::Bool(_) | Constant::Num(_) => Err(InvalidType),
             Constant::Bytes(bytes) => match bytes {
@@ -275,7 +195,7 @@ impl<'a> TryFrom<Constant<'a>> for Cow<'a, str> {
 impl<'a> TryFrom<Constant<'a>> for String {
     type Error = InvalidType;
 
-    fn try_from(value: Constant<'a>) -> core::result::Result<Self, Self::Error> {
+    fn try_from(value: Constant<'a>) -> Result<Self, Self::Error> {
         match value {
             Constant::Bool(_) | Constant::Num(_) => Err(InvalidType),
             Constant::Bytes(bytes) => {
@@ -288,7 +208,7 @@ impl<'a> TryFrom<Constant<'a>> for String {
 impl<'a> TryFrom<Constant<'a>> for Cow<'a, [u8]> {
     type Error = InvalidType;
 
-    fn try_from(value: Constant<'a>) -> core::result::Result<Self, Self::Error> {
+    fn try_from(value: Constant<'a>) -> Result<Self, Self::Error> {
         match value {
             Constant::Bool(_) | Constant::Num(_) => Err(InvalidType),
             Constant::Bytes(bytes) => Ok(bytes),
@@ -299,7 +219,7 @@ impl<'a> TryFrom<Constant<'a>> for Cow<'a, [u8]> {
 impl<'a> TryFrom<Constant<'a>> for Vec<u8> {
     type Error = InvalidType;
 
-    fn try_from(value: Constant<'a>) -> core::result::Result<Self, Self::Error> {
+    fn try_from(value: Constant<'a>) -> Result<Self, Self::Error> {
         match value {
             Constant::Bool(_) | Constant::Num(_) => Err(InvalidType),
             Constant::Bytes(bytes) => Ok(bytes.into_owned()),
@@ -310,7 +230,7 @@ impl<'a> TryFrom<Constant<'a>> for Vec<u8> {
 impl<'a> TryFrom<Constant<'a>> for i64 {
     type Error = InvalidType;
 
-    fn try_from(value: Constant<'a>) -> core::result::Result<Self, Self::Error> {
+    fn try_from(value: Constant<'a>) -> Result<Self, Self::Error> {
         match value {
             Constant::Bool(_) | Constant::Bytes(_) => Err(InvalidType),
             Constant::Num(n) => Ok(n),
@@ -321,7 +241,7 @@ impl<'a> TryFrom<Constant<'a>> for i64 {
 impl<'a> TryFrom<Constant<'a>> for bool {
     type Error = InvalidType;
 
-    fn try_from(value: Constant<'a>) -> core::result::Result<Self, Self::Error> {
+    fn try_from(value: Constant<'a>) -> Result<Self, Self::Error> {
         match value {
             Constant::Bool(b) => Ok(b),
             Constant::Num(_) | Constant::Bytes(_) => Err(InvalidType),
@@ -331,10 +251,38 @@ impl<'a> TryFrom<Constant<'a>> for bool {
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub(crate) struct Context<'a> {
-    /// The bytes which a [`BytesId`] indexes into
-    bytes: Cow<'a, [u8]>,
-    /// The numbers which a [`NumId`] indexes into
-    numbers: Cow<'a, [u8]>,
+    data: Cow<'a, [u8]>,
+}
+
+#[derive(Debug)]
+pub(crate) struct Iter<'a> {
+    data: &'a [u8],
+}
+
+impl<'a> Iterator for Iter<'a> {
+    type Item = (ConstantTy, &'a [u8]);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.data.is_empty() {
+            return None;
+        }
+
+        let first_len_byte = self.data[0];
+        let ty = match first_len_byte >> 5 {
+            2 => ConstantTy::Num,
+            3 => ConstantTy::Bytes,
+            _ => unreachable!(),
+        };
+
+        let first_len_byte = first_len_byte & 0x1F;
+        let len = u16::from_be_bytes([first_len_byte, self.data[1]]);
+
+        let len = usize::from(len);
+        let slice = &self.data[2..2 + len];
+        self.data = &self.data[2 + len..];
+
+        Some((ty, slice))
+    }
 }
 
 impl<'a> Context<'a> {
@@ -342,41 +290,23 @@ impl<'a> Context<'a> {
     #[must_use]
     pub const fn new() -> Self {
         Self {
-            bytes: Cow::Borrowed(&[0, 0]),
-            numbers: Cow::Borrowed(&[0, 0]),
+            data: Cow::Borrowed(&[0, 0]),
         }
     }
 
-    fn byte_slices_len(&self) -> usize {
-        usize::from(u16::from_be_bytes([self.bytes[0], self.bytes[1]]))
-    }
-
-    fn byte_slice(&self, idx: usize) -> &[u8] {
-        let mut bytes = &self.bytes[2..];
-        let mut cur = 0;
-        loop {
-            let len = usize::from(u16::from_be_bytes([bytes[0], bytes[1]]));
-            let slice = &bytes[2..2 + len];
-            if cur == idx {
-                return slice;
-            }
-
-            bytes = &bytes[2 + len..];
-            cur += 1;
+    fn iter(&self) -> Iter<'_> {
+        Iter {
+            data: &self.data[2..],
         }
     }
 
-    /// Given a slice of bytes, returns the existing [`BytesId`], if the byte slice exists in the context.
     #[must_use]
     pub(crate) fn bytes_id(&self, needle: &[u8]) -> Option<BytesId> {
-        let len = self.byte_slices_len();
-        (0..len)
-            .map(|i| self.byte_slice(i))
-            .position(|s| s == needle)
+        self.iter()
+            .position(|(ty, value)| ty == ConstantTy::Bytes && value == needle)
             .map(|pos| {
                 BytesId(
-                    BYTES_START_INDEX
-                        + u16::try_from(pos).expect("greater than u16::MAX byte slices in context"),
+                    2 + u16::try_from(pos).expect("greater than u16::MAX byte slices in context"),
                 )
             })
     }
@@ -384,11 +314,12 @@ impl<'a> Context<'a> {
     /// Returns the slice of bytes given the [`BytesId`].
     #[must_use]
     pub(crate) fn bytes(&self, id: BytesId) -> &[u8] {
-        assert!(is_bytes_ref(id.0));
-        let idx = usize::from(id.0 - BYTES_START_INDEX);
-        let len = self.byte_slices_len();
-        assert!(idx < len);
-        self.byte_slice(idx)
+        let idx = usize::from(id.0 - 2);
+        let Some((ty, value)) = self.iter().nth(idx) else {
+            unreachable!()
+        };
+        assert_eq!(ty, ConstantTy::Bytes);
+        value
     }
 
     /// Given a slice of bytes, returns a [`BytesId`].
@@ -400,64 +331,47 @@ impl<'a> Context<'a> {
         if let Some(bytes_id) = self.bytes_id(needle) {
             bytes_id
         } else {
-            let bytes = self.bytes.to_mut();
-            let needle_len = u16::try_from(needle.len()).unwrap();
-            bytes.extend(needle_len.to_be_bytes());
-            bytes.extend(needle.as_ref());
+            let data = self.data.to_mut();
 
-            let len = u16::from_be_bytes([bytes[0], bytes[1]]) + 1;
+            let needle_len = needle.len();
+            assert!(needle_len <= 4096);
+            let needle_len = u16::try_from(needle_len).unwrap();
+            let needle_len = needle_len | (3 << 13);
+            data.extend(needle_len.to_be_bytes());
+            data.extend(needle.as_ref());
+
+            let len = u16::from_be_bytes([data[0], data[1]]) + 1;
             let len_bytes = len.to_be_bytes();
-            bytes[0] = len_bytes[0];
-            bytes[1] = len_bytes[1];
+            data[0] = len_bytes[0];
+            data[1] = len_bytes[1];
 
-            BytesId(BYTES_START_INDEX + len - 1)
-        }
-    }
-
-    fn num_len(&self) -> usize {
-        usize::from(u16::from_be_bytes([self.numbers[0], self.numbers[1]]))
-    }
-
-    fn num_value(&self, idx: usize) -> i64 {
-        let mut numbers = &self.numbers[2..];
-        let mut cur = 0;
-        loop {
-            let value = i64::from_be_bytes([
-                numbers[0], numbers[1], numbers[2], numbers[3], numbers[4], numbers[5], numbers[6],
-                numbers[7],
-            ]);
-            if cur == idx {
-                return value;
-            }
-
-            numbers = &numbers[8..];
-            cur += 1;
+            BytesId(2 + len - 1)
         }
     }
 
     /// Given a `i64` value, returns the existing [`NumId`], if the `i64` exists in the context.
     #[must_use]
     pub(crate) fn num_id(&self, needle: i64) -> Option<NumId> {
-        let len = self.num_len();
-        (0..len)
-            .map(|i| self.num_value(i))
-            .position(|s| s == needle)
+        self.iter()
+            .position(|(ty, value)| {
+                ty == ConstantTy::Num
+                    && i64::from_be_bytes(<[u8; 8]>::try_from(value).unwrap()) == needle
+            })
             .map(|pos| {
-                NumId(
-                    NUMBER_START_INDEX
-                        + u16::try_from(pos).expect("greater than u16::MAX numbers in context"),
-                )
+                NumId(2 + u16::try_from(pos).expect("greater than u16::MAX numbers in context"))
             })
     }
 
     /// Returns the number value given the [`NumId`].
     #[must_use]
+    #[allow(unused)]
     pub(crate) fn num(&self, id: NumId) -> i64 {
-        assert!(is_number_ref(id.0));
-        let idx = usize::from(id.0 - NUMBER_START_INDEX);
-        let len = self.num_len();
-        assert!(idx < len);
-        self.num_value(idx)
+        let idx = usize::from(id.0 - 2);
+        let Some((ty, value)) = self.iter().nth(idx) else {
+            unreachable!()
+        };
+        assert_eq!(ty, ConstantTy::Num);
+        i64::from_be_bytes(<[u8; 8]>::try_from(value).unwrap())
     }
 
     /// Given a number, returns a [`NumId`].
@@ -469,15 +383,19 @@ impl<'a> Context<'a> {
         if let Some(id) = self.num_id(needle) {
             id
         } else {
-            let numbers = self.numbers.to_mut();
-            numbers.extend(needle.to_be_bytes());
+            let data = self.data.to_mut();
 
-            let len = u16::from_be_bytes([numbers[0], numbers[1]]) + 1;
+            let needle_len = 8u16;
+            let needle_len = needle_len | (2 << 13);
+            data.extend(needle_len.to_be_bytes());
+            data.extend(needle.to_be_bytes());
+
+            let len = u16::from_be_bytes([data[0], data[1]]) + 1;
             let len_bytes = len.to_be_bytes();
-            numbers[0] = len_bytes[0];
-            numbers[1] = len_bytes[1];
+            data[0] = len_bytes[0];
+            data[1] = len_bytes[1];
 
-            NumId(NUMBER_START_INDEX + len - 1)
+            NumId(2 + len - 1)
         }
     }
 
@@ -488,22 +406,24 @@ impl<'a> Context<'a> {
     {
         let id = ConstantId::from(id);
 
-        let Ok(id) = ScalarId::try_from(id) else {
-            panic!()
+        if id.0 == BOOL_FALSE_INDEX {
+            return Constant::Bool(false);
+        }
+
+        if id.0 == BOOL_TRUE_INDEX {
+            return Constant::Bool(true);
+        }
+
+        let Some((ty, value)) = self.iter().nth(usize::from(id.0 - 2)) else {
+            unreachable!()
         };
 
-        if let Ok(value) = <bool>::try_from(id) {
-            return Constant::Bool(value);
+        match ty {
+            ConstantTy::Unknown | ConstantTy::Bool => unreachable!(),
+            ConstantTy::Num => {
+                Constant::Num(i64::from_be_bytes(<[u8; 8]>::try_from(value).unwrap()))
+            }
+            ConstantTy::Bytes => Constant::Bytes(Cow::from(value)),
         }
-
-        if let Ok(id) = <NumId>::try_from(id) {
-            return Constant::Num(self.num(id));
-        }
-
-        if let Ok(id) = <BytesId>::try_from(id) {
-            return Constant::Bytes(Cow::from(self.bytes(id)));
-        }
-
-        unreachable!("unknown constant type")
     }
 }

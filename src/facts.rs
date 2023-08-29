@@ -17,8 +17,7 @@ use std::{collections::BTreeMap, error, vec::Vec};
 use generic_array::{ArrayLength, GenericArray};
 
 use crate::{
-    error::Error,
-    values::{BytesId, ConstantId, Context, ScalarId},
+    values::{BytesId, ConstantId, Context},
     Constant,
 };
 
@@ -35,14 +34,6 @@ impl From<BytesId> for PredicateId {
 impl From<PredicateId> for BytesId {
     fn from(value: PredicateId) -> Self {
         Self(value.0)
-    }
-}
-
-impl TryFrom<ConstantId> for PredicateId {
-    type Error = Error;
-
-    fn try_from(value: ConstantId) -> Result<Self, Self::Error> {
-        Ok(Self::from(BytesId::try_from(ScalarId::try_from(value)?)?))
     }
 }
 

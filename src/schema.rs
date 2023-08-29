@@ -15,14 +15,14 @@ use crate::{
 /// Type of a constant
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConstantTy {
+    /// Unknown
+    Unknown,
     /// Boolean
     Bool,
     /// Number
     Num,
     /// Bytes
     Bytes,
-    /// Unknown
-    Unknown,
 }
 
 impl<'a> From<Constant<'a>> for ConstantTy {
