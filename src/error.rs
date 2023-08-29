@@ -45,7 +45,9 @@ impl Error {
             ErrorKind::QueryResultError(_)
             | ErrorKind::MultipleMatchingFacts
             | ErrorKind::DuplicateSchema
-            | ErrorKind::FactTermsError(_) => false,
+            | ErrorKind::FactTermsError(_)
+            | ErrorKind::InvalidContextValue
+            | ErrorKind::ContextFull => false,
             ErrorKind::UnknownPredicate | ErrorKind::MismatchSchemaTys => true,
         }
     }
@@ -108,6 +110,10 @@ pub(crate) enum ErrorKind {
     MismatchSchemaTys,
     /// Fact terms error
     FactTermsError(FactTermsError),
+    /// The value cannot be added to the context
+    InvalidContextValue,
+    /// The context cannot add any more data
+    ContextFull,
 }
 
 #[cfg(feature = "std")]
@@ -117,7 +123,9 @@ impl error::Error for ErrorKind {
             ErrorKind::MultipleMatchingFacts
             | ErrorKind::DuplicateSchema
             | ErrorKind::UnknownPredicate
-            | ErrorKind::MismatchSchemaTys => None,
+            | ErrorKind::MismatchSchemaTys
+            | ErrorKind::InvalidContextValue
+            | ErrorKind::ContextFull => None,
             ErrorKind::QueryResultError(e) => Some(e),
             ErrorKind::FactTermsError(e) => Some(e),
         }
@@ -135,6 +143,8 @@ impl Display for ErrorKind {
             ErrorKind::UnknownPredicate => f.write_str("predicate should be in the schema"),
             ErrorKind::MismatchSchemaTys => f.write_str("types should match schema"),
             ErrorKind::FactTermsError(e) => Display::fmt(e, f),
+            ErrorKind::InvalidContextValue => f.write_str("value cannot be added to context"),
+            ErrorKind::ContextFull => f.write_str("context cannot add more data"),
         }
     }
 }
@@ -150,6 +160,8 @@ impl fmt::Debug for ErrorKind {
             ErrorKind::UnknownPredicate => f.write_str("predicate should be in the schema"),
             ErrorKind::MismatchSchemaTys => f.write_str("types should match schema"),
             ErrorKind::FactTermsError(e) => fmt::Debug::fmt(e, f),
+            ErrorKind::InvalidContextValue => f.write_str("value cannot be added to context"),
+            ErrorKind::ContextFull => f.write_str("context cannot add more data"),
         }
     }
 }

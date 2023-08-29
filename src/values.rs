@@ -16,10 +16,17 @@ use core::fmt;
 #[cfg(feature = "std")]
 use std::{borrow::Cow, error};
 
-use crate::ConstantTy;
+use crate::{
+    error::{Error, ErrorKind},
+    ConstantTy,
+};
 
 const BOOL_FALSE_INDEX: u16 = 0;
 const BOOL_TRUE_INDEX: u16 = 1;
+
+const MAX_DATA_LEN: usize = 4096;
+const BYTES_TY_BITMASK: u16 = 3 << 13;
+const NUM_TY_BITMASK: u16 = 2 << 13;
 
 /// An interned bytes reference.
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
@@ -293,25 +300,34 @@ impl<'a> Context<'a> {
     /// If the slice of bytes value already exists in the context, it will return the
     /// existing assigned [`BytesId`]. If the slice of bytes value does not exist in
     /// the context, a unique [`BytesId`] will be assigned and returned.
-    pub(crate) fn get_or_insert_bytes_id(&mut self, needle: &[u8]) -> BytesId {
+    pub(crate) fn get_or_insert_bytes_id(&mut self, needle: &[u8]) -> Result<BytesId, Error> {
+        if needle.len() > MAX_DATA_LEN {
+            return Err(Error::with_kind(ErrorKind::InvalidContextValue));
+        }
+
         if let Some(bytes_id) = self.bytes_id(needle) {
-            bytes_id
+            Ok(bytes_id)
         } else {
             let data = self.data.to_mut();
+
+            let len = u16::from_be_bytes([data[0], data[1]]);
+            if len >= u16::MAX - 2 {
+                return Err(Error::with_kind(ErrorKind::ContextFull));
+            }
+            let len = len + 1;
 
             let needle_len = needle.len();
             assert!(needle_len <= 4096);
             let needle_len = u16::try_from(needle_len).unwrap();
-            let needle_len = needle_len | (3 << 13);
+            let needle_len = needle_len | BYTES_TY_BITMASK;
             data.extend(needle_len.to_be_bytes());
             data.extend(needle.as_ref());
 
-            let len = u16::from_be_bytes([data[0], data[1]]) + 1;
             let len_bytes = len.to_be_bytes();
             data[0] = len_bytes[0];
             data[1] = len_bytes[1];
 
-            BytesId(2 + len - 1)
+            Ok(BytesId(2 + len - 1))
         }
     }
 
@@ -345,23 +361,28 @@ impl<'a> Context<'a> {
     /// If the number value already exists in the context, it will return the
     /// existing assigned [`NumId`]. If the number value does not exist in
     /// the context, a unique [`NumId`] will be assigned and returned.
-    pub(crate) fn get_or_insert_num_id(&mut self, needle: i64) -> NumId {
+    pub(crate) fn get_or_insert_num_id(&mut self, needle: i64) -> Result<NumId, Error> {
         if let Some(id) = self.num_id(needle) {
-            id
+            Ok(id)
         } else {
             let data = self.data.to_mut();
 
+            let len = u16::from_be_bytes([data[0], data[1]]);
+            if len >= u16::MAX - 2 {
+                return Err(Error::with_kind(ErrorKind::ContextFull));
+            }
+            let len = len + 1;
+
             let needle_len = 8u16;
-            let needle_len = needle_len | (2 << 13);
+            let needle_len = needle_len | NUM_TY_BITMASK;
             data.extend(needle_len.to_be_bytes());
             data.extend(needle.to_be_bytes());
 
-            let len = u16::from_be_bytes([data[0], data[1]]) + 1;
             let len_bytes = len.to_be_bytes();
             data[0] = len_bytes[0];
             data[1] = len_bytes[1];
 
-            NumId(2 + len - 1)
+            Ok(NumId(2 + len - 1))
         }
     }
 

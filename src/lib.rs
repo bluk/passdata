@@ -125,13 +125,13 @@ impl<'s, 'c> Passdata<'s, 'c> {
 
         let mut v: GenericArray<ConstantId, T::Length> = GenericArray::default();
 
-        let pred = PredicateId::from(self.context.get_or_insert_bytes_id(predicate.as_bytes()));
+        let pred = PredicateId::from(self.context.get_or_insert_bytes_id(predicate.as_bytes())?);
 
         for (idx, c) in constants.into_iter().enumerate() {
             v[idx] = match c {
                 Constant::Bool(value) => ScalarId::from(value).into(),
-                Constant::Num(value) => self.context.get_or_insert_num_id(value).into(),
-                Constant::Bytes(value) => self.context.get_or_insert_bytes_id(value).into(),
+                Constant::Num(value) => self.context.get_or_insert_num_id(value)?.into(),
+                Constant::Bytes(value) => self.context.get_or_insert_bytes_id(value)?.into(),
             };
         }
 
