@@ -97,14 +97,12 @@ impl<'s, 'c> Passdata<'s, 'c> {
             return Ok(Either::Left(iter::empty()));
         };
 
-        let Some(iter) = self.edb.terms_iter(pred, tys.len()) else {
-            return Ok(Either::Left(iter::empty()));
-        };
-
-        Ok(Either::Right(iter.map(|constants| FactTerms {
-            constants,
-            context: &self.context,
-        })))
+        Ok(Either::Right(self.edb.terms_iter(pred, tys.len()).map(
+            |constants| FactTerms {
+                constants,
+                context: &self.context,
+            },
+        )))
     }
 
     /// Add a fact explicitly.
@@ -163,29 +161,29 @@ impl<'s, 'c> Passdata<'s, 'c> {
             return Ok(Either::Left(iter::empty()));
         };
 
-        let Some(iter) = self.edb.terms_iter(pred, T::Length::USIZE) else {
-            return Ok(Either::Left(iter::empty()));
-        };
+        Ok(Either::Right(
+            self.edb
+                .terms_iter(pred, T::Length::USIZE)
+                .filter_map(move |cs| {
+                    let mut r = GenericArray::default();
+                    for (idx, v) in cs.enumerate() {
+                        r[idx] = self.context.constant(v);
+                    }
 
-        Ok(Either::Right(iter.filter_map(move |cs| {
-            let mut r = GenericArray::default();
-            for (idx, v) in cs.iter().enumerate() {
-                r[idx] = self.context.constant(*v);
-            }
+                    let res = match T::into_tuple(r) {
+                        Ok(res) => res,
+                        Err(e) => {
+                            unreachable!("{e}")
+                        }
+                    };
 
-            let res = match T::into_tuple(r) {
-                Ok(res) => res,
-                Err(e) => {
-                    unreachable!("{e}")
-                }
-            };
+                    if !values.is_match(&res) {
+                        return None;
+                    }
 
-            if !values.is_match(&res) {
-                return None;
-            }
-
-            Some(res)
-        })))
+                    Some(res)
+                }),
+        ))
     }
 
     /// Determines if there is any explicitly declared fact which matches the given parameters.
