@@ -38,11 +38,12 @@ pub(crate) mod values;
 
 use crate::{
     error::{Error, ErrorKind, Result},
-    facts::{FactTerms, PredicateId},
+    facts::PredicateId,
     utils::{IntoArray, QueryResult},
     values::{BytesId, ConstantId, ScalarId},
 };
 
+pub use facts::{FactTerms, FactTermsError};
 pub use schema::{ConstantTy, Schema};
 pub use utils::{AnyBool, AnyConstant, AnyNum, AnyStr};
 pub use values::Constant;

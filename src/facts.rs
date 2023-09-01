@@ -286,8 +286,10 @@ pub(crate) fn push<N: ArrayLength<ConstantId>>(
     facts.update_len();
 }
 
+/// Errors returned when using [`FactTerms`] methods.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum FactTermsError {
+    /// The destination buffer's length is less than the number of terms
     InvalidLength,
 }
 
@@ -316,6 +318,7 @@ impl error::Error for FactTermsError {
     }
 }
 
+/// Terms for a fact.
 #[derive(Debug)]
 pub struct FactTerms<'a> {
     pub(crate) constants: TermIter<'a>,
@@ -323,6 +326,7 @@ pub struct FactTerms<'a> {
 }
 
 impl<'a> FactTerms<'a> {
+    /// Returns the terms as a [`Vec`].
     #[must_use]
     pub fn to_vec(&self) -> Vec<Constant<'a>> {
         self.constants
@@ -331,6 +335,13 @@ impl<'a> FactTerms<'a> {
             .collect::<Vec<_>>()
     }
 
+    /// Fills a buffer with the [`Constant`] values of the fact's terms.
+    ///
+    /// Returns the slice of buffer used.
+    ///
+    /// # Errors
+    ///
+    /// If the destination buffer's length is less than the number of terms, an error is returned.
     pub fn fill_buf<'c>(
         &self,
         dst: &'c mut [Constant<'a>],
