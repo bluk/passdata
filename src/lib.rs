@@ -170,6 +170,13 @@ impl<'s> Passdata<'s> {
         }
     }
 
+    /// Returns the underlying encoded data.
+    #[must_use]
+    #[inline]
+    pub fn into_inner(self) -> Vec<u8> {
+        self.data
+    }
+
     fn section_rng(&self, section: SectionId) -> Option<(usize, usize)> {
         let mut offset = 0;
         loop {
