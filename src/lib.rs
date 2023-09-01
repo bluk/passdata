@@ -20,7 +20,11 @@
 #[cfg(all(feature = "alloc", not(feature = "std")))]
 extern crate alloc;
 
+#[cfg(all(feature = "alloc", not(feature = "std")))]
+use alloc::vec::Vec;
 use core::iter;
+#[cfg(feature = "std")]
+use std::vec::Vec;
 
 use either::Either;
 use generic_array::{functional::FunctionalSequence, ArrayLength, GenericArray};
@@ -34,24 +38,113 @@ pub(crate) mod values;
 
 use crate::{
     error::{Error, ErrorKind, Result},
-    facts::{FactTerms, Facts, PredicateId},
+    facts::{FactTerms, PredicateId},
     utils::{IntoArray, QueryResult},
-    values::{BytesId, ConstantId, Context, ScalarId},
+    values::{BytesId, ConstantId, ScalarId},
 };
 
 pub use schema::{ConstantTy, Schema};
 pub use utils::{AnyBool, AnyConstant, AnyNum, AnyStr};
 pub use values::Constant;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SectionId {
+    Unknown,
+    Context,
+    Edb,
+}
+
+impl From<u8> for SectionId {
+    fn from(value: u8) -> Self {
+        match value {
+            1 => SectionId::Context,
+            2 => SectionId::Edb,
+            _ => SectionId::Unknown,
+        }
+    }
+}
+
+impl From<SectionId> for u8 {
+    fn from(value: SectionId) -> Self {
+        match value {
+            SectionId::Context => 1,
+            SectionId::Edb => 2,
+            SectionId::Unknown => 0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct Section<'a> {
+    start: usize,
+    end: usize,
+    data: &'a [u8],
+}
+
+impl<'a> Section<'a> {
+    #[must_use]
+    #[inline]
+    fn data(self) -> &'a [u8] {
+        if self.start == self.end {
+            &[]
+        } else {
+            &self.data[self.start + 3..self.end]
+        }
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct SectionMut<'a> {
+    start: usize,
+    end: usize,
+    data: &'a mut Vec<u8>,
+}
+
+impl<'a> SectionMut<'a> {
+    #[inline]
+    fn as_ref(&self) -> Section<'_> {
+        Section {
+            start: self.start,
+            end: self.end,
+            data: self.data,
+        }
+    }
+
+    #[inline]
+    fn init(&mut self, init: &[u8]) {
+        if self.start == self.end {
+            self.data.splice(self.end..self.end, init.iter().copied());
+            self.end += init.len();
+        }
+    }
+
+    #[inline]
+    fn update_len(&mut self) {
+        let len = self.end - self.start - 3;
+        let len = u16::try_from(len).unwrap();
+        let len = len.to_be_bytes();
+        self.data[self.start + 1] = len[0];
+        self.data[self.start + 2] = len[1];
+    }
+
+    #[inline]
+    fn splice<I>(&mut self, iter: I)
+    where
+        I: IntoIterator<Item = u8>,
+    {
+        let ext = self.data.len();
+        self.data.splice(self.end..self.end, iter);
+        self.end += self.data.len() - ext;
+    }
+}
+
 /// Data for the logic program.
 #[derive(Debug)]
 pub struct Passdata<'s> {
     /// The program's types
     schema: &'s Schema<'s>,
-    /// Values in context
-    context: Context,
-    /// Facts explictly added to the data
-    edb: Facts,
+    /// Encoded data
+    data: Vec<u8>,
 }
 
 impl<'s> Passdata<'s> {
@@ -60,15 +153,71 @@ impl<'s> Passdata<'s> {
     pub const fn new(schema: &'s Schema<'s>) -> Self {
         Self {
             schema,
-            context: Context::new(),
-            edb: Facts::new(),
+            data: Vec::new(),
+        }
+    }
+
+    fn section_rng(&self, section: SectionId) -> Option<(usize, usize)> {
+        let mut offset = 0;
+        loop {
+            if offset == self.data.len() {
+                return None;
+            }
+            debug_assert!(offset < self.data.len());
+
+            let len = usize::from(u16::from_be_bytes([
+                self.data[offset + 1],
+                self.data[offset + 2],
+            ]));
+
+            let cur_sec = SectionId::from(self.data[offset]);
+            if cur_sec == section {
+                return Some((offset, offset + 3 + len));
+            }
+
+            offset += 3 + len;
+        }
+    }
+
+    fn section(&self, section: SectionId) -> Section<'_> {
+        let Some((start, end)) = self.section_rng(section) else {
+            return Section {
+                start: self.data.len(),
+                end: self.data.len(),
+                data: &self.data,
+            };
+        };
+
+        Section {
+            start,
+            end,
+            data: &self.data,
+        }
+    }
+
+    #[must_use]
+    #[inline]
+    fn section_mut(&mut self, section: SectionId) -> SectionMut<'_> {
+        let Some((start, end)) = self.section_rng(section) else {
+            return SectionMut {
+                start: self.data.len(),
+                end: self.data.len(),
+                data: &mut self.data,
+            };
+        };
+
+        SectionMut {
+            start,
+            end,
+            data: &mut self.data,
         }
     }
 
     /// Iterator over predicates.
     pub fn predicates_iter(&self) -> impl Iterator<Item = &str> + '_ {
-        self.edb.pred_iter().map(|id| {
-            let bytes = self.context.bytes(BytesId::from(id));
+        let ctx = self.section(SectionId::Context);
+        facts::pred_iter(self.section(SectionId::Edb)).map(move |id| {
+            let bytes = values::bytes(&ctx, BytesId::from(id));
             let Ok(p) = core::str::from_utf8(bytes) else {
                 unreachable!("predicate should be a UTF-8 string")
             };
@@ -86,20 +235,20 @@ impl<'s> Passdata<'s> {
             return Err(Error::with_kind(ErrorKind::UnknownPredicate));
         };
 
-        let Some(pred) = self
-            .context
-            .bytes_id(predicate.as_bytes())
-            .map(PredicateId::from)
-        else {
+        let ctx = self.section(SectionId::Context);
+
+        let Some(pred) = values::bytes_id(&ctx, predicate.as_bytes()).map(PredicateId::from) else {
             return Ok(Either::Left(iter::empty()));
         };
 
-        Ok(Either::Right(self.edb.terms_iter(pred, tys.len()).map(
-            |constants| FactTerms {
-                constants,
-                context: &self.context,
-            },
-        )))
+        Ok(Either::Right(
+            facts::terms_iter(&self.section(SectionId::Edb), pred, tys.len()).map(
+                move |constants| FactTerms {
+                    constants,
+                    context: ctx,
+                },
+            ),
+        ))
     }
 
     /// Add a fact explicitly.
@@ -120,17 +269,22 @@ impl<'s> Passdata<'s> {
 
         let mut v: GenericArray<ConstantId, T::Length> = GenericArray::default();
 
-        let pred = PredicateId::from(self.context.get_or_insert_bytes_id(predicate.as_bytes())?);
+        let mut ctx = self.section_mut(SectionId::Context);
+
+        let pred = PredicateId::from(values::get_or_insert_bytes_id(
+            &mut ctx,
+            predicate.as_bytes(),
+        )?);
 
         for (idx, c) in constants.into_iter().enumerate() {
             v[idx] = match c {
                 Constant::Bool(value) => ScalarId::from(value).into(),
-                Constant::Num(value) => self.context.get_or_insert_num_id(value)?.into(),
-                Constant::Bytes(value) => self.context.get_or_insert_bytes_id(value)?.into(),
+                Constant::Num(value) => values::get_or_insert_num_id(&mut ctx, value)?.into(),
+                Constant::Bytes(value) => values::get_or_insert_bytes_id(&mut ctx, value)?.into(),
             };
         }
 
-        self.edb.push(pred, v);
+        facts::push(self.section_mut(SectionId::Edb), pred, v);
 
         Ok(())
     }
@@ -150,21 +304,18 @@ impl<'s> Passdata<'s> {
     {
         self.schema.validate_tys(predicate, &T::tys())?;
 
-        let Some(pred) = self
-            .context
-            .bytes_id(predicate.as_bytes())
-            .map(PredicateId::from)
-        else {
+        let ctx = self.section(SectionId::Context);
+
+        let Some(pred) = values::bytes_id(&ctx, predicate.as_bytes()).map(PredicateId::from) else {
             return Ok(Either::Left(iter::empty()));
         };
 
         Ok(Either::Right(
-            self.edb
-                .terms_iter(pred, T::Length::USIZE)
-                .filter_map(move |cs| {
+            facts::terms_iter(&self.section(SectionId::Edb), pred, T::Length::USIZE).filter_map(
+                move |cs| {
                     let mut r = GenericArray::default();
                     for (idx, v) in cs.enumerate() {
-                        r[idx] = self.context.constant(v);
+                        r[idx] = values::constant(&ctx, v);
                     }
 
                     let res = match T::into_tuple(r) {
@@ -179,7 +330,8 @@ impl<'s> Passdata<'s> {
                     }
 
                     Some(res)
-                }),
+                },
+            ),
         ))
     }
 
@@ -240,7 +392,7 @@ mod tests {
         let mut data = Passdata::new(&schema);
 
         let mut iter = data.edb_iter("a")?;
-        assert_eq!(iter.next(), None);
+        assert!(iter.next().is_none());
         drop(iter);
 
         data.add_fact("a", true)?;
@@ -252,7 +404,7 @@ mod tests {
             iter.next().map(|t| t.to_vec()),
             Some(vec![Constant::Bool(true)])
         );
-        assert_eq!(iter.next(), None);
+        assert!(iter.next().is_none());
 
         let mut iter = data.edb_iter("b")?;
         assert_eq!(
@@ -271,7 +423,7 @@ mod tests {
                 Constant::Bool(true)
             ])
         );
-        assert_eq!(iter.next(), None);
+        assert!(iter.next().is_none());
 
         let mut values: [Constant<'_>; 8] = [
             Constant::Bool(false),
@@ -304,7 +456,7 @@ mod tests {
                 Constant::Bool(true)
             ]
         );
-        assert_eq!(iter.next(), None);
+        assert!(iter.next().is_none());
 
         Ok(())
     }

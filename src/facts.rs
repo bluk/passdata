@@ -17,8 +17,8 @@ use std::{error, vec::Vec};
 use generic_array::{ArrayLength, GenericArray};
 
 use crate::{
-    values::{BytesId, ConstantId, Context},
-    Constant,
+    values::{self, BytesId, ConstantId},
+    Constant, Section, SectionMut,
 };
 
 /// An interned predicate reference.
@@ -37,9 +37,14 @@ impl From<PredicateId> for BytesId {
     }
 }
 
+/// An iterator over the predicates.
 #[derive(Debug)]
-pub(crate) struct PredIter<'a> {
+struct PredIter<'a> {
     data: &'a [u8],
+}
+
+pub(crate) fn pred_iter(facts: Section<'_>) -> impl Iterator<Item = PredicateId> + '_ {
+    PredIter { data: facts.data() }
 }
 
 impl<'a> Iterator for PredIter<'a> {
@@ -90,7 +95,7 @@ impl<'a> Iterator for TermIter<'a> {
 }
 
 #[derive(Debug)]
-pub(crate) struct FactTermsIter<'a> {
+struct FactTermsIter<'a> {
     len: usize,
     data: &'a [u8],
 }
@@ -120,173 +125,165 @@ impl<'a> Iterator for FactTermsIter<'a> {
     }
 }
 
-#[derive(Debug, Default, Clone, Hash, PartialEq, Eq)]
-pub(crate) struct Facts {
-    data: Vec<u8>,
+/// An iterator for terms for a given predicate.
+pub(crate) fn terms_iter<'a>(
+    facts: &Section<'a>,
+    pred: PredicateId,
+    pred_len: usize,
+) -> impl Iterator<Item = TermIter<'a>> + 'a {
+    let mut data = facts.data();
+
+    loop {
+        if data.is_empty() {
+            return FactTermsIter::new(data, pred_len);
+        }
+
+        let predicate = PredicateId(u16::from_be_bytes([data[0], data[1]]));
+        let len = usize::from(u16::from_be_bytes([data[2], data[3]])) * 2;
+
+        if predicate == pred {
+            return FactTermsIter::new(&data[4..4 + len], pred_len);
+        }
+
+        data = &data[4 + len..];
+    }
 }
 
-impl Facts {
-    #[must_use]
-    pub const fn new() -> Self {
-        Self { data: Vec::new() }
+const SECTION_INIT: [u8; 3] = [2, 0, 0];
+
+/// Pushes a new tuple value for a predicate.
+pub(crate) fn push<N: ArrayLength<ConstantId>>(
+    mut facts: SectionMut<'_>,
+    pred: PredicateId,
+    constants: GenericArray<ConstantId, N>,
+) {
+    /// An iterator of the constants serialized as [u8]s.
+    ///
+    /// Structure exists to give the correct `size_hint`.
+    struct ConstantBytesIter<T> {
+        iter: T,
+        size_hint: usize,
     }
 
-    /// An iterator over the predicates.
-    pub(crate) fn pred_iter(&self) -> impl Iterator<Item = PredicateId> + '_ {
-        PredIter { data: &self.data }
+    impl<T> Iterator for ConstantBytesIter<T>
+    where
+        T: Iterator<Item = u8>,
+    {
+        type Item = u8;
+
+        fn next(&mut self) -> Option<Self::Item> {
+            self.iter.next()
+        }
+
+        // Gives an exact size_hint so that a splice call will be optimal.
+        fn size_hint(&self) -> (usize, Option<usize>) {
+            (self.size_hint, Some(self.size_hint))
+        }
     }
 
-    /// An iterator for terms for a given predicate.
-    pub(crate) fn terms_iter(
-        &self,
-        pred: PredicateId,
-        pred_len: usize,
-    ) -> impl Iterator<Item = TermIter<'_>> + '_ {
-        let mut data = self.data.as_slice();
+    assert!(!constants.is_empty());
+
+    facts.init(&SECTION_INIT);
+
+    let constants_len = constants.len();
+    let mut pos = facts.start + 3;
+
+    loop {
+        if pos == facts.end {
+            break;
+        }
+        debug_assert!(pos < facts.end);
+
+        let pred_start_pos = pos;
+        let predicate = PredicateId(u16::from_be_bytes([facts.data[pos], facts.data[pos + 1]]));
+        let mut len = usize::from(u16::from_be_bytes([
+            facts.data[pos + 2],
+            facts.data[pos + 3],
+        ]));
+        pos += 4;
+
+        if predicate != pred {
+            pos += len * 2;
+            continue;
+        }
 
         loop {
-            if data.is_empty() {
-                return FactTermsIter::new(data, pred_len);
-            }
-
-            let predicate = PredicateId(u16::from_be_bytes([data[0], data[1]]));
-            let len = usize::from(u16::from_be_bytes([data[2], data[3]])) * 2;
-
-            if predicate == pred {
-                return FactTermsIter::new(&data[4..4 + len], pred_len);
-            }
-
-            data = &data[4 + len..];
-        }
-    }
-
-    /// Returns true if the fact already exists.
-    #[must_use]
-    #[inline]
-    #[allow(unused)]
-    pub(crate) fn contains_terms(
-        &self,
-        pred: PredicateId,
-        pred_len: usize,
-        terms: &[ConstantId],
-    ) -> bool {
-        self.terms_iter(pred, pred_len).any(|existing_fact| {
-            for (t1, t2) in existing_fact.zip(terms) {
-                if t1 != *t2 {
-                    return false;
-                }
-            }
-            true
-        })
-    }
-
-    /// Pushes a new tuple value for a predicate.
-    pub(crate) fn push<N: ArrayLength<ConstantId>>(
-        &mut self,
-        pred: PredicateId,
-        constants: GenericArray<ConstantId, N>,
-    ) {
-        /// An iterator of the constants serialized as [u8]s.
-        ///
-        /// Structure exists to give the correct `size_hint`.
-        struct ConstantBytesIter<T> {
-            iter: T,
-            size_hint: usize,
-        }
-
-        impl<T> Iterator for ConstantBytesIter<T>
-        where
-            T: Iterator<Item = u8>,
-        {
-            type Item = u8;
-
-            fn next(&mut self) -> Option<Self::Item> {
-                self.iter.next()
-            }
-
-            // Gives an exact size_hint so that a splice call will be optimal.
-            fn size_hint(&self) -> (usize, Option<usize>) {
-                (self.size_hint, Some(self.size_hint))
-            }
-        }
-
-        assert!(!constants.is_empty());
-
-        let constants_len = constants.len();
-        let mut pos = 0;
-
-        loop {
-            if pos == self.data.len() {
+            if len == 0 {
                 break;
             }
-            debug_assert!(pos < self.data.len());
 
-            let pred_start_pos = pos;
-            let predicate = PredicateId(u16::from_be_bytes([self.data[pos], self.data[pos + 1]]));
-            let mut len = usize::from(u16::from_be_bytes([self.data[pos + 2], self.data[pos + 3]]));
-            pos += 4;
-
-            if predicate != pred {
-                pos += len * 2;
-                continue;
-            }
-
-            loop {
-                if len == 0 {
+            let mut is_equal = true;
+            for i in 0..constants.len() {
+                let existing_constant = ConstantId(u16::from_be_bytes([
+                    facts.data[pos + (i * 2)],
+                    facts.data[pos + (i * 2) + 1],
+                ]));
+                if existing_constant != constants[i] {
+                    is_equal = false;
                     break;
                 }
-
-                let mut is_equal = true;
-                for i in 0..constants.len() {
-                    let existing_constant = ConstantId(u16::from_be_bytes([
-                        self.data[pos + (i * 2)],
-                        self.data[pos + (i * 2) + 1],
-                    ]));
-                    if existing_constant != constants[i] {
-                        is_equal = false;
-                        break;
-                    }
-                }
-
-                if is_equal {
-                    // Found an equivalent term already
-                    return;
-                }
-
-                len = len.checked_sub(constants.len()).unwrap();
-                // len -= constants.len();
-                pos += constants.len() * 2;
             }
 
-            let len =
-                u16::from_be_bytes([self.data[pred_start_pos + 2], self.data[pred_start_pos + 3]])
-                    .checked_add(u16::try_from(constants_len).unwrap())
-                    .unwrap();
-            let len_bytes = len.to_be_bytes();
-            self.data[pred_start_pos + 2] = len_bytes[0];
-            self.data[pred_start_pos + 3] = len_bytes[1];
+            if is_equal {
+                // Found an equivalent term already
+                return;
+            }
 
-            let size_hint = constants.len() * 2;
-            let constants = constants.into_iter().flat_map(|c| c.0.to_be_bytes());
-
-            self.data.splice(
-                pos..pos,
-                ConstantBytesIter {
-                    iter: constants,
-                    size_hint,
-                },
-            );
-            return;
+            len = len.checked_sub(constants.len()).unwrap();
+            pos += constants.len() * 2;
         }
 
-        debug_assert_eq!(pos, self.data.len());
+        let len = u16::from_be_bytes([
+            facts.data[pred_start_pos + 2],
+            facts.data[pred_start_pos + 3],
+        ])
+        .checked_add(u16::try_from(constants_len).unwrap())
+        .unwrap();
+        let len_bytes = len.to_be_bytes();
+        facts.data[pred_start_pos + 2] = len_bytes[0];
+        facts.data[pred_start_pos + 3] = len_bytes[1];
 
-        self.data.extend(pred.0.to_be_bytes());
-        self.data
-            .extend(u16::try_from(constants_len).unwrap().to_be_bytes());
-        self.data
-            .extend(constants.into_iter().flat_map(|c| c.0.to_be_bytes()));
+        let size_hint = constants.len() * 2;
+        let constants = constants.into_iter().flat_map(|c| c.0.to_be_bytes());
+
+        facts.data.splice(
+            pos..pos,
+            ConstantBytesIter {
+                iter: constants,
+                size_hint,
+            },
+        );
+
+        facts.end += size_hint;
+        facts.update_len();
+
+        return;
     }
+
+    debug_assert_eq!(pos, facts.end);
+
+    facts
+        .data
+        .splice(facts.end..facts.end, pred.0.to_be_bytes());
+    facts.end += 2;
+    facts.data.splice(
+        facts.end..facts.end,
+        u16::try_from(constants_len).unwrap().to_be_bytes(),
+    );
+    facts.end += 2;
+
+    let size_hint = constants.len() * 2;
+    let constants = constants.into_iter().flat_map(|c| c.0.to_be_bytes());
+
+    facts.data.splice(
+        facts.end..facts.end,
+        ConstantBytesIter {
+            iter: constants,
+            size_hint,
+        },
+    );
+    facts.end += size_hint;
+    facts.update_len();
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -319,10 +316,10 @@ impl error::Error for FactTermsError {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug)]
 pub struct FactTerms<'a> {
     pub(crate) constants: TermIter<'a>,
-    pub(crate) context: &'a Context,
+    pub(crate) context: Section<'a>,
 }
 
 impl<'a> FactTerms<'a> {
@@ -330,19 +327,19 @@ impl<'a> FactTerms<'a> {
     pub fn to_vec(&self) -> Vec<Constant<'a>> {
         self.constants
             .clone()
-            .map(|c| self.context.constant(c))
+            .map(|c| values::constant(&self.context, c))
             .collect::<Vec<_>>()
     }
 
-    pub fn fill_buf<'b>(
+    pub fn fill_buf<'c>(
         &self,
-        dst: &'b mut [Constant<'a>],
-    ) -> Result<&'b [Constant<'a>], FactTermsError> {
+        dst: &'c mut [Constant<'a>],
+    ) -> Result<&'c [Constant<'a>], FactTermsError> {
         let mut idx = 0;
 
         for id in self.constants.clone() {
             if let Some(v) = dst.get_mut(idx) {
-                *v = self.context.constant(id);
+                *v = values::constant(&self.context, id);
             } else {
                 return Err(FactTermsError::InvalidLength);
             }
