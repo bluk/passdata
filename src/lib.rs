@@ -149,8 +149,20 @@ pub struct Passdata<'s> {
 
 impl<'s> Passdata<'s> {
     /// Constructs with empty data.
+    ///
+    /// # Safety
+    ///
+    /// The data is not verified to be valid.
     #[must_use]
-    pub const fn new(schema: &'s Schema<'s>) -> Self {
+    #[inline]
+    pub const unsafe fn new_unchecked(schema: &'s Schema<'s>, data: Vec<u8>) -> Self {
+        Self { schema, data }
+    }
+
+    /// Constructs with the given schema and empty data.
+    #[must_use]
+    #[inline]
+    pub const fn with_schema(schema: &'s Schema<'s>) -> Self {
         Self {
             schema,
             data: Vec::new(),
@@ -389,7 +401,7 @@ mod tests {
         schema.insert_tys("a", &[ConstantTy::Bool])?;
         schema.insert_tys("b", &[ConstantTy::Bytes, ConstantTy::Num, ConstantTy::Bool])?;
 
-        let mut data = Passdata::new(&schema);
+        let mut data = Passdata::with_schema(&schema);
 
         let mut iter = data.edb_iter("a")?;
         assert!(iter.next().is_none());
@@ -472,7 +484,7 @@ mod tests {
         schema.insert_tys("b2", &[ConstantTy::Num, ConstantTy::Num])?;
         schema.insert_tys("c", &[ConstantTy::Bytes, ConstantTy::Num, ConstantTy::Bool])?;
 
-        let mut data = Passdata::new(&schema);
+        let mut data = Passdata::with_schema(&schema);
 
         data.add_fact("a", true)?;
         data.add_fact("a2", 1)?;
@@ -518,7 +530,7 @@ mod tests {
         schema.insert_tys("a", &[ConstantTy::Bool])?;
         schema.insert_tys("b", &[ConstantTy::Bytes, ConstantTy::Num, ConstantTy::Bool])?;
 
-        let mut data = Passdata::new(&schema);
+        let mut data = Passdata::with_schema(&schema);
 
         data.add_fact("a", true)?;
         data.add_fact("b", ("xyz", 1234, false))?;
@@ -552,7 +564,7 @@ mod tests {
 
     #[test]
     fn query_only_one_edb() -> Result<()> {
-        let mut data = Passdata::new(&QUERY_ONLY_ONE_EDB_SCHEMA);
+        let mut data = Passdata::with_schema(&QUERY_ONLY_ONE_EDB_SCHEMA);
 
         data.add_fact("a", true)?;
         data.add_fact("b", ("xyz", 1234, false))?;
@@ -603,7 +615,7 @@ mod tests {
     #[test]
     fn missing_predicate_schema_errors() {
         let schema = Schema::new();
-        let mut data = Passdata::new(&schema);
+        let mut data = Passdata::with_schema(&schema);
 
         let error = match data.query_edb("c", ("abc", AnyConstant, AnyConstant)) {
             Ok(_) => panic!("should have had a schema error"),
@@ -627,7 +639,7 @@ mod tests {
         schema.insert_tys("a", &[ConstantTy::Bool])?;
         schema.insert_tys("b", &[ConstantTy::Bytes, ConstantTy::Num, ConstantTy::Bool])?;
 
-        let mut data = Passdata::new(&schema);
+        let mut data = Passdata::with_schema(&schema);
 
         let error = match data.query_edb("b", (AnyConstant, AnyConstant)) {
             Ok(_) => panic!("should have had a schema error"),
@@ -655,7 +667,7 @@ mod tests {
         schema.insert_tys("a", &[ConstantTy::Bool])?;
         schema.insert_tys("b", &[ConstantTy::Bytes, ConstantTy::Num, ConstantTy::Bool])?;
 
-        let mut data = Passdata::new(&schema);
+        let mut data = Passdata::with_schema(&schema);
 
         let error = match data.query_edb("b", (AnyConstant, AnyConstant, 1)) {
             Ok(_) => panic!("should have had a schema error"),
