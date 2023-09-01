@@ -11,10 +11,10 @@
 //! absolute limit to the amount of data that can be encoded.
 
 #[cfg(all(feature = "alloc", not(feature = "std")))]
-use alloc::borrow::Cow;
+use alloc::{borrow::Cow, vec::Vec};
 use core::fmt;
 #[cfg(feature = "std")]
-use std::{borrow::Cow, error};
+use std::{borrow::Cow, error, vec::Vec};
 
 use crate::{
     error::{Error, ErrorKind},
@@ -222,11 +222,6 @@ impl<'a> TryFrom<Constant<'a>> for bool {
     }
 }
 
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub(crate) struct Context<'a> {
-    data: Cow<'a, [u8]>,
-}
-
 #[derive(Debug)]
 pub(crate) struct Iter<'a> {
     data: &'a [u8],
@@ -258,18 +253,25 @@ impl<'a> Iterator for Iter<'a> {
     }
 }
 
-impl<'a> Context<'a> {
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub(crate) struct Context {
+    data: Vec<u8>,
+}
+
+impl Context {
     /// Create an empty context.
     #[must_use]
     pub const fn new() -> Self {
-        Self {
-            data: Cow::Borrowed(&[0, 0]),
-        }
+        Self { data: Vec::new() }
     }
 
     fn iter(&self) -> Iter<'_> {
-        Iter {
-            data: &self.data[2..],
+        if self.data.is_empty() {
+            Iter { data: &[] }
+        } else {
+            Iter {
+                data: &self.data[2..],
+            }
         }
     }
 
@@ -308,9 +310,11 @@ impl<'a> Context<'a> {
         if let Some(bytes_id) = self.bytes_id(needle) {
             Ok(bytes_id)
         } else {
-            let data = self.data.to_mut();
+            if self.data.is_empty() {
+                self.data.extend(0u16.to_be_bytes());
+            }
 
-            let len = u16::from_be_bytes([data[0], data[1]]);
+            let len = u16::from_be_bytes([self.data[0], self.data[1]]);
             if len >= u16::MAX - 2 {
                 return Err(Error::with_kind(ErrorKind::ContextFull));
             }
@@ -320,12 +324,12 @@ impl<'a> Context<'a> {
             assert!(needle_len <= 4096);
             let needle_len = u16::try_from(needle_len).unwrap();
             let needle_len = needle_len | BYTES_TY_BITMASK;
-            data.extend(needle_len.to_be_bytes());
-            data.extend(needle.as_ref());
+            self.data.extend(needle_len.to_be_bytes());
+            self.data.extend(needle.as_ref());
 
             let len_bytes = len.to_be_bytes();
-            data[0] = len_bytes[0];
-            data[1] = len_bytes[1];
+            self.data[0] = len_bytes[0];
+            self.data[1] = len_bytes[1];
 
             Ok(BytesId(2 + len - 1))
         }
@@ -365,9 +369,11 @@ impl<'a> Context<'a> {
         if let Some(id) = self.num_id(needle) {
             Ok(id)
         } else {
-            let data = self.data.to_mut();
+            if self.data.is_empty() {
+                self.data.extend(0u16.to_be_bytes());
+            }
 
-            let len = u16::from_be_bytes([data[0], data[1]]);
+            let len = u16::from_be_bytes([self.data[0], self.data[1]]);
             if len >= u16::MAX - 2 {
                 return Err(Error::with_kind(ErrorKind::ContextFull));
             }
@@ -375,12 +381,12 @@ impl<'a> Context<'a> {
 
             let needle_len = 8u16;
             let needle_len = needle_len | NUM_TY_BITMASK;
-            data.extend(needle_len.to_be_bytes());
-            data.extend(needle.to_be_bytes());
+            self.data.extend(needle_len.to_be_bytes());
+            self.data.extend(needle.to_be_bytes());
 
             let len_bytes = len.to_be_bytes();
-            data[0] = len_bytes[0];
-            data[1] = len_bytes[1];
+            self.data[0] = len_bytes[0];
+            self.data[1] = len_bytes[1];
 
             Ok(NumId(2 + len - 1))
         }

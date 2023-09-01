@@ -45,16 +45,16 @@ pub use values::Constant;
 
 /// Data for the logic program.
 #[derive(Debug)]
-pub struct Passdata<'s, 'c> {
+pub struct Passdata<'s> {
     /// The program's types
     schema: &'s Schema<'s>,
     /// Values in context
-    context: Context<'c>,
+    context: Context,
     /// Facts explictly added to the data
     edb: Facts,
 }
 
-impl<'s, 'c> Passdata<'s, 'c> {
+impl<'s> Passdata<'s> {
     /// Constructs with empty data.
     #[must_use]
     pub const fn new(schema: &'s Schema<'s>) -> Self {
@@ -81,10 +81,7 @@ impl<'s, 'c> Passdata<'s, 'c> {
     /// # Errors
     ///
     /// - if the predicate is unknown.
-    pub fn edb_iter(
-        &self,
-        predicate: &str,
-    ) -> Result<impl Iterator<Item = FactTerms<'_, '_>> + '_> {
+    pub fn edb_iter(&self, predicate: &str) -> Result<impl Iterator<Item = FactTerms<'_>> + '_> {
         let Some(tys) = self.schema.get_tys(predicate) else {
             return Err(Error::with_kind(ErrorKind::UnknownPredicate));
         };
