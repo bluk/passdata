@@ -58,7 +58,7 @@ macro_rules! impl_into_array_single_ty {
     };
 }
 
-impl_into_array_single_ty!(bool, i64, &'a str);
+impl_into_array_single_ty!(bool, i64, &'a str, &'a [u8]);
 
 macro_rules! impl_into_array_tuple {
     ($i0:ident) => {};
