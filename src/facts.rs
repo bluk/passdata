@@ -56,7 +56,7 @@ impl<'a> Iterator for PredIter<'a> {
         }
 
         let predicate = u16::from_be_bytes([self.data[0], self.data[1]]);
-        let len = usize::from(u16::from_be_bytes([self.data[2], self.data[3]])) * 2;
+        let len = usize::from(u16::from_be_bytes([self.data[2], self.data[3]]));
 
         self.data = &self.data[4 + len..];
 
@@ -96,13 +96,17 @@ impl<'a> Iterator for TermIter<'a> {
 
 #[derive(Debug)]
 struct FactTermsIter<'a> {
+    /// Byte length of a single tuple's terms
     len: usize,
     data: &'a [u8],
 }
 
 impl<'a> FactTermsIter<'a> {
-    fn new(data: &'a [u8], len: usize) -> Self {
-        Self { len, data }
+    fn new(data: &'a [u8], pred_len: usize) -> Self {
+        Self {
+            len: pred_len * 2,
+            data,
+        }
     }
 }
 
@@ -117,9 +121,9 @@ impl<'a> Iterator for FactTermsIter<'a> {
             return None;
         }
 
-        let iter = TermIter::new(&self.data[..self.len * 2]);
+        let iter = TermIter::new(&self.data[..self.len]);
 
-        self.data = &self.data[self.len * 2..];
+        self.data = &self.data[self.len..];
 
         Some(iter)
     }
@@ -139,7 +143,7 @@ pub(crate) fn terms_iter<'a>(
         }
 
         let predicate = PredicateId(u16::from_be_bytes([data[0], data[1]]));
-        let len = usize::from(u16::from_be_bytes([data[2], data[3]])) * 2;
+        let len = usize::from(u16::from_be_bytes([data[2], data[3]]));
 
         if predicate == pred {
             return FactTermsIter::new(&data[4..4 + len], pred_len);
@@ -151,41 +155,42 @@ pub(crate) fn terms_iter<'a>(
 
 const SECTION_INIT: [u8; 3] = [2, 0, 0];
 
+/// An iterator of the constants serialized as [u8]s.
+///
+/// Structure exists to give the correct `size_hint`.
+struct ConstantBytesIter<T> {
+    iter: T,
+    size_hint: usize,
+}
+
+impl<T> Iterator for ConstantBytesIter<T>
+where
+    T: Iterator<Item = u8>,
+{
+    type Item = u8;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next()
+    }
+
+    // Gives an exact size_hint so that a splice call will be optimal.
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.size_hint, Some(self.size_hint))
+    }
+}
+
 /// Pushes a new tuple value for a predicate.
 pub(crate) fn push<N: ArrayLength<ConstantId>>(
     mut facts: SectionMut<'_>,
     pred: PredicateId,
     constants: GenericArray<ConstantId, N>,
 ) {
-    /// An iterator of the constants serialized as [u8]s.
-    ///
-    /// Structure exists to give the correct `size_hint`.
-    struct ConstantBytesIter<T> {
-        iter: T,
-        size_hint: usize,
-    }
-
-    impl<T> Iterator for ConstantBytesIter<T>
-    where
-        T: Iterator<Item = u8>,
-    {
-        type Item = u8;
-
-        fn next(&mut self) -> Option<Self::Item> {
-            self.iter.next()
-        }
-
-        // Gives an exact size_hint so that a splice call will be optimal.
-        fn size_hint(&self) -> (usize, Option<usize>) {
-            (self.size_hint, Some(self.size_hint))
-        }
-    }
-
     assert!(!constants.is_empty());
 
     facts.init(&SECTION_INIT);
 
     let constants_len = constants.len();
+    let bytes_len = constants_len * 2;
     let mut pos = facts.start + 3;
 
     loop {
@@ -203,7 +208,7 @@ pub(crate) fn push<N: ArrayLength<ConstantId>>(
         pos += 4;
 
         if predicate != pred {
-            pos += len * 2;
+            pos += len;
             continue;
         }
 
@@ -213,11 +218,14 @@ pub(crate) fn push<N: ArrayLength<ConstantId>>(
             }
 
             let mut is_equal = true;
-            for i in 0..constants.len() {
-                let existing_constant = ConstantId(u16::from_be_bytes([
-                    facts.data[pos + (i * 2)],
-                    facts.data[pos + (i * 2) + 1],
-                ]));
+            let mut offset = 0;
+            for i in 0..constants_len {
+                let first_byte = facts.data[pos + offset];
+                offset += 1;
+                let second_byte = facts.data[pos + offset];
+                offset += 1;
+
+                let existing_constant = ConstantId(u16::from_be_bytes([first_byte, second_byte]));
                 if existing_constant != constants[i] {
                     is_equal = false;
                     break;
@@ -229,32 +237,31 @@ pub(crate) fn push<N: ArrayLength<ConstantId>>(
                 return;
             }
 
-            len = len.checked_sub(constants.len()).unwrap();
-            pos += constants.len() * 2;
+            len = len.checked_sub(bytes_len).unwrap();
+            pos += bytes_len;
         }
 
         let len = u16::from_be_bytes([
             facts.data[pred_start_pos + 2],
             facts.data[pred_start_pos + 3],
         ])
-        .checked_add(u16::try_from(constants_len).unwrap())
+        .checked_add(u16::try_from(bytes_len).unwrap())
         .unwrap();
         let len_bytes = len.to_be_bytes();
         facts.data[pred_start_pos + 2] = len_bytes[0];
         facts.data[pred_start_pos + 3] = len_bytes[1];
 
-        let size_hint = constants.len() * 2;
         let constants = constants.into_iter().flat_map(|c| c.0.to_be_bytes());
 
         facts.data.splice(
             pos..pos,
             ConstantBytesIter {
                 iter: constants,
-                size_hint,
+                size_hint: bytes_len,
             },
         );
 
-        facts.end += size_hint;
+        facts.end += bytes_len;
         facts.update_len();
 
         return;
@@ -268,21 +275,20 @@ pub(crate) fn push<N: ArrayLength<ConstantId>>(
     facts.end += 2;
     facts.data.splice(
         facts.end..facts.end,
-        u16::try_from(constants_len).unwrap().to_be_bytes(),
+        u16::try_from(bytes_len).unwrap().to_be_bytes(),
     );
     facts.end += 2;
 
-    let size_hint = constants.len() * 2;
     let constants = constants.into_iter().flat_map(|c| c.0.to_be_bytes());
 
     facts.data.splice(
         facts.end..facts.end,
         ConstantBytesIter {
             iter: constants,
-            size_hint,
+            size_hint: bytes_len,
         },
     );
-    facts.end += size_hint;
+    facts.end += bytes_len;
     facts.update_len();
 }
 
