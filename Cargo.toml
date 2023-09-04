@@ -7,6 +7,7 @@ include = [
   "src/**/*.rs",
   "Cargo.toml",
   "README.md",
+  "CHANGELOG.md",
   "LICENSE-APACHE",
   "LICENSE-MIT",
 ]
@@ -14,7 +15,7 @@ license = "MIT OR Apache-2.0"
 name = "passdata"
 repository = "https://github.com/bluk/passdata"
 readme = "README.md"
-version = "0.0.1"
+version = "0.0.2"
 
 [dependencies]
 either = { version ="1.9.0", default-features = false }
