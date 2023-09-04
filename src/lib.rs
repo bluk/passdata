@@ -177,6 +177,13 @@ impl<'s> Passdata<'s> {
         self.data
     }
 
+    /// Returns the underlying encoded data as a slice.
+    #[must_use]
+    #[inline]
+    pub fn as_slice(&self) -> &[u8] {
+        &self.data
+    }
+
     fn section_rng(&self, section: SectionId) -> Option<(usize, usize)> {
         let mut offset = 0;
         loop {
