@@ -30,19 +30,20 @@ use either::Either;
 use generic_array::{functional::FunctionalSequence, ArrayLength, GenericArray};
 use typenum::Unsigned;
 
-pub mod error;
+pub(crate) mod error;
 pub(crate) mod facts;
 pub(crate) mod schema;
 pub(crate) mod utils;
 pub(crate) mod values;
 
 use crate::{
-    error::{Error, ErrorKind, Result},
+    error::ErrorKind,
     facts::PredicateId,
     utils::{IntoArray, QueryResult},
     values::{BytesId, ConstantId, ScalarId},
 };
 
+pub use error::{Error, Result};
 pub use facts::{FactTerms, FactTermsError};
 pub use schema::{ConstantTy, Schema};
 pub use utils::{AnyBool, AnyConstant, AnyNum, AnyStr};

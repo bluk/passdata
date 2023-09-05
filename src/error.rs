@@ -77,6 +77,13 @@ impl From<FactTermsError> for Error {
     }
 }
 
+#[cfg(feature = "std")]
+impl error::Error for Error {
+    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
+        self.inner.kind.source()
+    }
+}
+
 #[derive(PartialEq)]
 struct ErrorImpl {
     kind: ErrorKind,
