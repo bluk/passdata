@@ -46,7 +46,7 @@ use crate::{
 pub use error::{Error, Result};
 pub use facts::{FactTerms, FactTermsError};
 pub use schema::{ConstantTy, Schema};
-pub use utils::{AnyBool, AnyConstant, AnyNum, AnyStr};
+pub use utils::{AnyBool, AnyBytes, AnyConstant, AnyNum, AnyStr};
 pub use values::Constant;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
