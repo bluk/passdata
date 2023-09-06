@@ -1,9 +1,21 @@
 //! # Passdata
 //!
 //! `Passdata` is authentication and authorization data expressed in a logic
-//! programming language. Data should fit within the limits of a HTTP cookie or
-//! header. The language is limited in order to guarantee properties during
-//! execution.
+//! programming language.
+//!
+//! # Requirements
+//!
+//! The library has a few requirements which are kept in mind.
+//!
+//! - The total amount of data should be within the maximum limit of a HTTP
+//!   cookie or HTTP header value. Since the data may also be encoded, have a signature
+//!   appended, and/or be encrypted, storage size is a top priority.
+//!
+//! - The programming language is limited in order to guarantee properties
+//!   during execution. Data may be queried but business logic is not intended to
+//!   be embedded in the data.
+//!
+//! - Prioritize storage size, then memory usage, and finally CPU usage.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 #![cfg_attr(docsrs, feature(doc_cfg))]

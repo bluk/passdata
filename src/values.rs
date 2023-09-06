@@ -1,10 +1,33 @@
 //! Values are stored in a `Context` and are indirectly referenced by various
 //! identifier types. Values are immutable.
 //!
+//! # Value Types
+//!
+//! There are a limited set of basic value types available. Booleans, numbers
+//! (`i64`), and byte slices.
+//!
+//! ## Strings vs Byte Slices
+//!
+//! Strings are represented as byte slices. The advantage of using byte slices
+//! versus strings is that some data may just be better represented directly as
+//! the underlying byte representation like a `Uuid`. Instead of having to
+//! encode bytes into strings with something like base64, byte slices can be
+//! used without encoding.
+//!
+//! # Reference Identifiers
+//!
+//! Opaque reference IDs are used to reference data. The library user
+//! should never directly use a reference ID because it is an implementation detail.
+//!
+//! A few advantages of using reference ID (versus direct values) are that it
+//! enforces a programming model where values are immutable and new values
+//! cannot be constructed in the program's execution. There may be a slight
+//! performance gain with operations like equality.
+//!
 //! # Limitations
 //!
 //! Values are not constructed during a program's execution. For instance,
-//! strings are not concatenated. Values have to be added explicitly to the
+//! strings cannot be concatenated. Values have to be added explicitly to the
 //! context before execution via facts or rules.
 //!
 //! Due to the limitations on a HTTP cookie/header value's length, there is an
