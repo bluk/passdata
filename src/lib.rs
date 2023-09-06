@@ -338,13 +338,13 @@ impl<'s> Passdata<'s> {
     pub fn query_edb<'a, T>(
         &'a self,
         predicate: &str,
-        values: T,
+        args: T,
     ) -> Result<impl Iterator<Item = T::ResultTy> + 'a>
     where
         T: QueryResult<'a> + 'a,
         T::ResultTy: TryFromConstantArray<'a>,
     {
-        self.schema.validate_tys(predicate, &T::tys())?;
+        self.schema.validate_tys(predicate, &args.tys())?;
 
         let ctx = self.section(SectionId::Context);
 
@@ -364,7 +364,7 @@ impl<'s> Passdata<'s> {
                         unreachable!()
                     };
 
-                    if !values.is_match(&res) {
+                    if !args.is_match(&res) {
                         return None;
                     }
 
@@ -379,12 +379,12 @@ impl<'s> Passdata<'s> {
     /// # Errors
     ///
     /// If the expected types are not compatible with the types in the data.
-    pub fn contains_edb<'a, T>(&'a self, pred: &str, values: T) -> Result<bool>
+    pub fn contains_edb<'a, T>(&'a self, pred: &str, args: T) -> Result<bool>
     where
         T: QueryResult<'a> + 'a,
         T::ResultTy: TryFromConstantArray<'a>,
     {
-        self.query_edb(pred, values)
+        self.query_edb(pred, args)
             .map(|mut values| values.next().is_some())
     }
 
@@ -395,16 +395,12 @@ impl<'s> Passdata<'s> {
     ///
     /// - If the expected types are not compatible with the types in the data.
     /// - If there are multiple matching facts
-    pub fn query_exclusive_edb<'a, T>(
-        &'a self,
-        pred: &str,
-        values: T,
-    ) -> Result<Option<T::ResultTy>>
+    pub fn query_exclusive_edb<'a, T>(&'a self, pred: &str, args: T) -> Result<Option<T::ResultTy>>
     where
         T: QueryResult<'a> + 'a,
         T::ResultTy: TryFromConstantArray<'a>,
     {
-        let mut iter = self.query_edb(pred, values)?;
+        let mut iter = self.query_edb(pred, args)?;
         let Some(first) = iter.next() else {
             return Ok(None);
         };

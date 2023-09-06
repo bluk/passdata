@@ -94,25 +94,54 @@ macro_rules! impl_into_array_tuple {
 
 impl_into_array_tuple!(dummy, T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12);
 
-/// Expected value used in a query.
-pub trait QueryValue {
-    /// The expected type to match.
-    type Ty<'a>: TryFrom<values::Constant<'a>>;
+/// Represents a value in a fact.
+///
+/// The argument can be an exact value such as `true`, `42`, or `&[1, 2, 3]`. A
+/// query will then find facts which have the same exact value.
+///
+/// The argument can also be more relaxed such as [`AnyBool`], [`AnyNum`],
+/// [`AnyBytes`], [`AnyStr`], or [`AnyConstant`] which match values which match
+/// the named type.
+pub trait QueryArg {
+    /// The result type. A tuple argument is converted into the `Value` type
+    /// from a [`values::Constant`].
+    type Value<'a>: TryFrom<values::Constant<'a>>;
 
-    fn ty() -> ConstantTy;
+    /// The argument's type. Used to verify the argument matches the actual schema type.
+    fn ty(&self) -> ConstantTy;
 
-    /// Determines if the found value matches the expected value.
-    fn is_match(&self, other: &Self::Ty<'_>) -> bool;
+    /// Determines if the found value matches the expected argument. In most
+    /// cases, the method is implemented by doing a simple equality comparision.
+    ///
+    /// In more relaxes cases, the argument could return true depending on the
+    /// value in the fact.
+    fn is_match(&self, other: &Self::Value<'_>) -> bool;
 }
 
-impl QueryValue for bool {
-    type Ty<'a> = bool;
+impl<'a> QueryArg for values::Constant<'a> {
+    type Value<'b> = values::Constant<'b>;
 
-    fn ty() -> ConstantTy {
+    fn ty(&self) -> ConstantTy {
+        match self {
+            values::Constant::Bool(_) => ConstantTy::Bool,
+            values::Constant::Num(_) => ConstantTy::Num,
+            values::Constant::Bytes(_) => ConstantTy::Bytes,
+        }
+    }
+
+    fn is_match(&self, other: &Self::Value<'_>) -> bool {
+        *self == *other
+    }
+}
+
+impl QueryArg for bool {
+    type Value<'a> = bool;
+
+    fn ty(&self) -> ConstantTy {
         ConstantTy::Bool
     }
 
-    fn is_match(&self, other: &Self::Ty<'_>) -> bool {
+    fn is_match(&self, other: &Self::Value<'_>) -> bool {
         *self == *other
     }
 }
@@ -121,26 +150,26 @@ impl QueryValue for bool {
 #[derive(Debug, Clone, Copy)]
 pub struct AnyBool;
 
-impl QueryValue for AnyBool {
-    type Ty<'a> = bool;
+impl QueryArg for AnyBool {
+    type Value<'a> = bool;
 
-    fn ty() -> ConstantTy {
+    fn ty(&self) -> ConstantTy {
         ConstantTy::Bool
     }
 
-    fn is_match(&self, _other: &Self::Ty<'_>) -> bool {
+    fn is_match(&self, _other: &Self::Value<'_>) -> bool {
         true
     }
 }
 
-impl QueryValue for i64 {
-    type Ty<'a> = i64;
+impl QueryArg for i64 {
+    type Value<'a> = i64;
 
-    fn ty() -> ConstantTy {
+    fn ty(&self) -> ConstantTy {
         ConstantTy::Num
     }
 
-    fn is_match(&self, other: &Self::Ty<'_>) -> bool {
+    fn is_match(&self, other: &Self::Value<'_>) -> bool {
         *self == *other
     }
 }
@@ -149,86 +178,86 @@ impl QueryValue for i64 {
 #[derive(Debug, Clone, Copy)]
 pub struct AnyNum;
 
-impl QueryValue for AnyNum {
-    type Ty<'a> = i64;
+impl QueryArg for AnyNum {
+    type Value<'a> = i64;
 
-    fn ty() -> ConstantTy {
+    fn ty(&self) -> ConstantTy {
         ConstantTy::Num
     }
 
-    fn is_match(&self, _other: &Self::Ty<'_>) -> bool {
+    fn is_match(&self, _other: &Self::Value<'_>) -> bool {
         true
     }
 }
 
-impl<'b> QueryValue for &'b str {
-    type Ty<'a> = &'a str;
+impl<'b> QueryArg for &'b str {
+    type Value<'a> = &'a str;
 
-    fn ty() -> ConstantTy {
+    fn ty(&self) -> ConstantTy {
         ConstantTy::Bytes
     }
 
-    fn is_match(&self, other: &Self::Ty<'_>) -> bool {
+    fn is_match(&self, other: &Self::Value<'_>) -> bool {
         self == other
     }
 }
 
-impl QueryValue for String {
-    type Ty<'a> = &'a str;
+impl QueryArg for String {
+    type Value<'a> = &'a str;
 
-    fn ty() -> ConstantTy {
+    fn ty(&self) -> ConstantTy {
         ConstantTy::Bytes
     }
 
-    fn is_match(&self, other: &Self::Ty<'_>) -> bool {
+    fn is_match(&self, other: &Self::Value<'_>) -> bool {
         self == *other
     }
 }
 
-impl<'b> QueryValue for Cow<'b, str> {
-    type Ty<'a> = &'a str;
+impl<'b> QueryArg for Cow<'b, str> {
+    type Value<'a> = &'a str;
 
-    fn ty() -> ConstantTy {
+    fn ty(&self) -> ConstantTy {
         ConstantTy::Bytes
     }
 
-    fn is_match(&self, other: &Self::Ty<'_>) -> bool {
+    fn is_match(&self, other: &Self::Value<'_>) -> bool {
         self == *other
     }
 }
 
-impl<'b> QueryValue for &'b [u8] {
-    type Ty<'a> = &'a [u8];
+impl<'b> QueryArg for &'b [u8] {
+    type Value<'a> = &'a [u8];
 
-    fn ty() -> ConstantTy {
+    fn ty(&self) -> ConstantTy {
         ConstantTy::Bytes
     }
 
-    fn is_match(&self, other: &Self::Ty<'_>) -> bool {
+    fn is_match(&self, other: &Self::Value<'_>) -> bool {
         self == other
     }
 }
 
-impl QueryValue for Vec<u8> {
-    type Ty<'a> = &'a [u8];
+impl QueryArg for Vec<u8> {
+    type Value<'a> = &'a [u8];
 
-    fn ty() -> ConstantTy {
+    fn ty(&self) -> ConstantTy {
         ConstantTy::Bytes
     }
 
-    fn is_match(&self, other: &Self::Ty<'_>) -> bool {
+    fn is_match(&self, other: &Self::Value<'_>) -> bool {
         self == other
     }
 }
 
-impl<'b> QueryValue for Cow<'b, [u8]> {
-    type Ty<'a> = &'a [u8];
+impl<'b> QueryArg for Cow<'b, [u8]> {
+    type Value<'a> = &'a [u8];
 
-    fn ty() -> ConstantTy {
+    fn ty(&self) -> ConstantTy {
         ConstantTy::Bytes
     }
 
-    fn is_match(&self, other: &Self::Ty<'_>) -> bool {
+    fn is_match(&self, other: &Self::Value<'_>) -> bool {
         *self == *other
     }
 }
@@ -237,14 +266,14 @@ impl<'b> QueryValue for Cow<'b, [u8]> {
 #[derive(Debug, Clone, Copy)]
 pub struct AnyStr;
 
-impl QueryValue for AnyStr {
-    type Ty<'a> = &'a str;
+impl QueryArg for AnyStr {
+    type Value<'a> = &'a str;
 
-    fn ty() -> ConstantTy {
+    fn ty(&self) -> ConstantTy {
         ConstantTy::Bytes
     }
 
-    fn is_match(&self, _other: &Self::Ty<'_>) -> bool {
+    fn is_match(&self, _other: &Self::Value<'_>) -> bool {
         true
     }
 }
@@ -253,14 +282,14 @@ impl QueryValue for AnyStr {
 #[derive(Debug, Clone, Copy)]
 pub struct AnyBytes;
 
-impl QueryValue for AnyBytes {
-    type Ty<'a> = &'a [u8];
+impl QueryArg for AnyBytes {
+    type Value<'a> = &'a [u8];
 
-    fn ty() -> ConstantTy {
+    fn ty(&self) -> ConstantTy {
         ConstantTy::Bytes
     }
 
-    fn is_match(&self, _other: &Self::Ty<'_>) -> bool {
+    fn is_match(&self, _other: &Self::Value<'_>) -> bool {
         true
     }
 }
@@ -269,14 +298,14 @@ impl QueryValue for AnyBytes {
 #[derive(Debug, Clone, Copy)]
 pub struct AnyConstant;
 
-impl QueryValue for AnyConstant {
-    type Ty<'a> = crate::values::Constant<'a>;
+impl QueryArg for AnyConstant {
+    type Value<'a> = crate::values::Constant<'a>;
 
-    fn ty() -> ConstantTy {
+    fn ty(&self) -> ConstantTy {
         ConstantTy::Unknown
     }
 
-    fn is_match(&self, _other: &Self::Ty<'_>) -> bool {
+    fn is_match(&self, _other: &Self::Value<'_>) -> bool {
         true
     }
 }
@@ -336,13 +365,13 @@ pub trait QueryResult<'a>
 where
     Self: Sized,
 {
-    /// Length of a `lang::Constant` generic array.
-    type Length: ArrayLength<values::Constant<'a>> + ArrayLength<ConstantTy>;
+    /// Number of arguments in the fact.
+    type Length: ArrayLength<ConstantTy>;
 
     /// Result type.
     type ResultTy;
 
-    fn tys() -> GenericArray<ConstantTy, Self::Length>;
+    fn tys(&self) -> GenericArray<ConstantTy, Self::Length>;
 
     /// If the given values matches the expected values.
     fn is_match(&self, other: &Self::ResultTy) -> bool;
@@ -350,17 +379,17 @@ where
 
 impl<'a, T, E> QueryResult<'a> for T
 where
-    T::Ty<'a>: TryFrom<values::Constant<'a>, Error = E>,
-    T: QueryValue,
+    T::Value<'a>: TryFrom<values::Constant<'a>, Error = E>,
+    T: QueryArg,
     QueryResultError: From<E>,
-    T::Ty<'a>: TryFromConstantArray<'a, Length = typenum::U1, Error = QueryResultError>,
+    T::Value<'a>: TryFromConstantArray<'a, Length = typenum::U1, Error = QueryResultError>,
 {
     type Length = typenum::U1;
 
-    type ResultTy = T::Ty<'a>;
+    type ResultTy = T::Value<'a>;
 
-    fn tys() -> GenericArray<ConstantTy, Self::Length> {
-        generic_array::arr![ConstantTy; T::ty()]
+    fn tys(&self) -> GenericArray<ConstantTy, Self::Length> {
+        generic_array::arr![ConstantTy; self.ty()]
     }
 
     fn is_match(&self, other: &Self::ResultTy) -> bool {
@@ -376,17 +405,20 @@ macro_rules! impl_query_result {
         paste::paste! {
 
         impl<'a, $($I),+, $([<E $I>]),+> QueryResult<'a> for ($($I,)+)
-            where $($I::Ty<'a> : TryFrom<values::Constant<'a>, Error =  [<E $I>]>),+,
-            $($I: QueryValue),+,
+            where $($I::Value<'a> : TryFrom<values::Constant<'a>, Error =  [<E $I>]>),+,
+            $($I: QueryArg),+,
             $(QueryResultError: From<[<E $I>]>),+,
             Self: Sized
         {
             type Length = count_ident_typenum!($($I),+);
 
-            type ResultTy = ($($I::Ty<'a>,)+);
+            type ResultTy = ($($I::Value<'a>,)+);
 
-            fn tys() -> GenericArray<ConstantTy, Self::Length> {
-                generic_array::arr![ConstantTy; $($I::ty()),+]
+            fn tys(&self) -> GenericArray<ConstantTy, Self::Length> {
+                #[allow(non_snake_case)]
+                let ($([<a_ $I>],)+) = self;
+
+                generic_array::arr![ConstantTy; $([<a_ $I>].ty()),+]
             }
 
             fn is_match(&self, other: &Self::ResultTy) -> bool {
