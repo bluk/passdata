@@ -37,6 +37,7 @@ use alloc::vec::Vec;
 use core::iter;
 #[cfg(feature = "std")]
 use std::vec::Vec;
+use utils::TryFromConstantArray;
 
 use either::Either;
 use generic_array::{functional::FunctionalSequence, ArrayLength, GenericArray};
@@ -341,6 +342,7 @@ impl<'s> Passdata<'s> {
     ) -> Result<impl Iterator<Item = T::ResultTy> + 'a>
     where
         T: QueryResult<'a> + 'a,
+        T::ResultTy: TryFromConstantArray<'a>,
     {
         self.schema.validate_tys(predicate, &T::tys())?;
 
@@ -358,11 +360,8 @@ impl<'s> Passdata<'s> {
                         r[idx] = values::constant(&ctx, v);
                     }
 
-                    let res = match T::into_tuple(r) {
-                        Ok(res) => res,
-                        Err(e) => {
-                            unreachable!("{e}")
-                        }
+                    let Ok(res) = T::ResultTy::try_from_constants(r) else {
+                        unreachable!()
                     };
 
                     if !values.is_match(&res) {
@@ -383,6 +382,7 @@ impl<'s> Passdata<'s> {
     pub fn contains_edb<'a, T>(&'a self, pred: &str, values: T) -> Result<bool>
     where
         T: QueryResult<'a> + 'a,
+        T::ResultTy: TryFromConstantArray<'a>,
     {
         self.query_edb(pred, values)
             .map(|mut values| values.next().is_some())
@@ -402,6 +402,7 @@ impl<'s> Passdata<'s> {
     ) -> Result<Option<T::ResultTy>>
     where
         T: QueryResult<'a> + 'a,
+        T::ResultTy: TryFromConstantArray<'a>,
     {
         let mut iter = self.query_edb(pred, values)?;
         let Some(first) = iter.next() else {
