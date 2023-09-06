@@ -114,7 +114,7 @@ impl From<ScalarId> for ConstantId {
 }
 
 /// A constant value.
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub enum Constant<'a> {
     /// Boolean
     Bool(bool),

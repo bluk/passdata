@@ -342,7 +342,7 @@ impl<'s> Passdata<'s> {
     ) -> Result<impl Iterator<Item = T::ResultTy> + 'a>
     where
         T: QueryResult<'a> + 'a,
-        T::ResultTy: TryFromConstantArray<'a>,
+        T::ResultTy: TryFromConstantArray<'a, Length = T::Length>,
     {
         self.schema.validate_tys(predicate, &args.tys())?;
 
@@ -360,13 +360,13 @@ impl<'s> Passdata<'s> {
                         r[idx] = values::constant(&ctx, v);
                     }
 
+                    if !args.is_match(&r) {
+                        return None;
+                    }
+
                     let Ok(res) = T::ResultTy::try_from_constants(r) else {
                         unreachable!()
                     };
-
-                    if !args.is_match(&res) {
-                        return None;
-                    }
 
                     Some(res)
                 },
@@ -382,7 +382,7 @@ impl<'s> Passdata<'s> {
     pub fn contains_edb<'a, T>(&'a self, pred: &str, args: T) -> Result<bool>
     where
         T: QueryResult<'a> + 'a,
-        T::ResultTy: TryFromConstantArray<'a>,
+        T::ResultTy: TryFromConstantArray<'a, Length = T::Length>,
     {
         self.query_edb(pred, args)
             .map(|mut values| values.next().is_some())
@@ -398,7 +398,7 @@ impl<'s> Passdata<'s> {
     pub fn query_exclusive_edb<'a, T>(&'a self, pred: &str, args: T) -> Result<Option<T::ResultTy>>
     where
         T: QueryResult<'a> + 'a,
-        T::ResultTy: TryFromConstantArray<'a>,
+        T::ResultTy: TryFromConstantArray<'a, Length = T::Length>,
     {
         let mut iter = self.query_edb(pred, args)?;
         let Some(first) = iter.next() else {

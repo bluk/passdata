@@ -115,7 +115,7 @@ pub trait QueryArg {
     ///
     /// In more relaxes cases, the argument could return true depending on the
     /// value in the fact.
-    fn is_match(&self, other: &Self::Value<'_>) -> bool;
+    fn is_match(&self, other: values::Constant<'_>) -> bool;
 }
 
 impl<'a> QueryArg for values::Constant<'a> {
@@ -129,8 +129,8 @@ impl<'a> QueryArg for values::Constant<'a> {
         }
     }
 
-    fn is_match(&self, other: &Self::Value<'_>) -> bool {
-        *self == *other
+    fn is_match(&self, other: values::Constant<'_>) -> bool {
+        *self == other
     }
 }
 
@@ -141,8 +141,11 @@ impl QueryArg for bool {
         ConstantTy::Bool
     }
 
-    fn is_match(&self, other: &Self::Value<'_>) -> bool {
-        *self == *other
+    fn is_match(&self, other: values::Constant<'_>) -> bool {
+        match other {
+            crate::Constant::Bool(other) => *self == other,
+            crate::Constant::Num(_) | crate::Constant::Bytes(_) => false,
+        }
     }
 }
 
@@ -157,8 +160,11 @@ impl QueryArg for AnyBool {
         ConstantTy::Bool
     }
 
-    fn is_match(&self, _other: &Self::Value<'_>) -> bool {
-        true
+    fn is_match(&self, other: values::Constant<'_>) -> bool {
+        match other {
+            crate::Constant::Bool(_) => true,
+            crate::Constant::Num(_) | crate::Constant::Bytes(_) => false,
+        }
     }
 }
 
@@ -169,8 +175,11 @@ impl QueryArg for i64 {
         ConstantTy::Num
     }
 
-    fn is_match(&self, other: &Self::Value<'_>) -> bool {
-        *self == *other
+    fn is_match(&self, other: values::Constant<'_>) -> bool {
+        match other {
+            crate::Constant::Num(other) => *self == other,
+            crate::Constant::Bool(_) | crate::Constant::Bytes(_) => false,
+        }
     }
 }
 
@@ -185,8 +194,11 @@ impl QueryArg for AnyNum {
         ConstantTy::Num
     }
 
-    fn is_match(&self, _other: &Self::Value<'_>) -> bool {
-        true
+    fn is_match(&self, other: values::Constant<'_>) -> bool {
+        match other {
+            crate::Constant::Num(_) => true,
+            crate::Constant::Bool(_) | crate::Constant::Bytes(_) => false,
+        }
     }
 }
 
@@ -197,8 +209,11 @@ impl<'b> QueryArg for &'b str {
         ConstantTy::Bytes
     }
 
-    fn is_match(&self, other: &Self::Value<'_>) -> bool {
-        self == other
+    fn is_match(&self, other: values::Constant<'_>) -> bool {
+        match other {
+            crate::Constant::Bytes(other) => self.as_bytes() == other,
+            crate::Constant::Bool(_) | crate::Constant::Num(_) => false,
+        }
     }
 }
 
@@ -209,8 +224,11 @@ impl QueryArg for String {
         ConstantTy::Bytes
     }
 
-    fn is_match(&self, other: &Self::Value<'_>) -> bool {
-        self == *other
+    fn is_match(&self, other: values::Constant<'_>) -> bool {
+        match other {
+            crate::Constant::Bytes(other) => self.as_bytes() == other,
+            crate::Constant::Bool(_) | crate::Constant::Num(_) => false,
+        }
     }
 }
 
@@ -221,8 +239,11 @@ impl<'b> QueryArg for Cow<'b, str> {
         ConstantTy::Bytes
     }
 
-    fn is_match(&self, other: &Self::Value<'_>) -> bool {
-        self == *other
+    fn is_match(&self, other: values::Constant<'_>) -> bool {
+        match other {
+            crate::Constant::Bytes(other) => self.as_bytes() == other,
+            crate::Constant::Bool(_) | crate::Constant::Num(_) => false,
+        }
     }
 }
 
@@ -233,8 +254,11 @@ impl<'b> QueryArg for &'b [u8] {
         ConstantTy::Bytes
     }
 
-    fn is_match(&self, other: &Self::Value<'_>) -> bool {
-        self == other
+    fn is_match(&self, other: values::Constant<'_>) -> bool {
+        match other {
+            crate::Constant::Bytes(other) => *self == other,
+            crate::Constant::Bool(_) | crate::Constant::Num(_) => false,
+        }
     }
 }
 
@@ -245,8 +269,11 @@ impl QueryArg for Vec<u8> {
         ConstantTy::Bytes
     }
 
-    fn is_match(&self, other: &Self::Value<'_>) -> bool {
-        self == other
+    fn is_match(&self, other: values::Constant<'_>) -> bool {
+        match other {
+            crate::Constant::Bytes(other) => *self == other,
+            crate::Constant::Bool(_) | crate::Constant::Num(_) => false,
+        }
     }
 }
 
@@ -257,8 +284,11 @@ impl<'b> QueryArg for Cow<'b, [u8]> {
         ConstantTy::Bytes
     }
 
-    fn is_match(&self, other: &Self::Value<'_>) -> bool {
-        *self == *other
+    fn is_match(&self, other: values::Constant<'_>) -> bool {
+        match other {
+            crate::Constant::Bytes(other) => *self == other,
+            crate::Constant::Bool(_) | crate::Constant::Num(_) => false,
+        }
     }
 }
 
@@ -273,8 +303,11 @@ impl QueryArg for AnyStr {
         ConstantTy::Bytes
     }
 
-    fn is_match(&self, _other: &Self::Value<'_>) -> bool {
-        true
+    fn is_match(&self, other: values::Constant<'_>) -> bool {
+        match other {
+            crate::Constant::Bytes(other) => core::str::from_utf8(other).is_ok(),
+            crate::Constant::Bool(_) | crate::Constant::Num(_) => false,
+        }
     }
 }
 
@@ -289,8 +322,11 @@ impl QueryArg for AnyBytes {
         ConstantTy::Bytes
     }
 
-    fn is_match(&self, _other: &Self::Value<'_>) -> bool {
-        true
+    fn is_match(&self, other: values::Constant<'_>) -> bool {
+        match other {
+            crate::Constant::Bytes(_) => true,
+            crate::Constant::Bool(_) | crate::Constant::Num(_) => false,
+        }
     }
 }
 
@@ -305,7 +341,7 @@ impl QueryArg for AnyConstant {
         ConstantTy::Unknown
     }
 
-    fn is_match(&self, _other: &Self::Value<'_>) -> bool {
+    fn is_match(&self, _: values::Constant<'_>) -> bool {
         true
     }
 }
@@ -366,7 +402,7 @@ where
     Self: Sized,
 {
     /// Number of arguments in the fact.
-    type Length: ArrayLength<ConstantTy>;
+    type Length: ArrayLength<ConstantTy> + ArrayLength<values::Constant<'a>>;
 
     /// Result type.
     type ResultTy;
@@ -374,7 +410,7 @@ where
     fn tys(&self) -> GenericArray<ConstantTy, Self::Length>;
 
     /// If the given values matches the expected values.
-    fn is_match(&self, other: &Self::ResultTy) -> bool;
+    fn is_match(&self, other: &GenericArray<values::Constant<'a>, Self::Length>) -> bool;
 }
 
 impl<'a, T, E> QueryResult<'a> for T
@@ -392,8 +428,8 @@ where
         generic_array::arr![ConstantTy; self.ty()]
     }
 
-    fn is_match(&self, other: &Self::ResultTy) -> bool {
-        self.is_match(other)
+    fn is_match(&self, other: &GenericArray<values::Constant<'a>, Self::Length>) -> bool {
+        self.is_match(other[0])
     }
 }
 
@@ -421,17 +457,24 @@ macro_rules! impl_query_result {
                 generic_array::arr![ConstantTy; $([<a_ $I>].ty()),+]
             }
 
-            fn is_match(&self, other: &Self::ResultTy) -> bool {
+            fn is_match(&self, other: &GenericArray<values::Constant<'a>, Self::Length>) -> bool {
                 #[allow(non_snake_case)]
                 let ($([<a_ $I>],)+) = self;
                 #[allow(non_snake_case)]
-                let ($([<b_ $I>],)+) = other;
+                let mut iter = other.iter().copied();
 
                 $(
-                    if ![<a_ $I>].is_match([<b_ $I>]) {
+                    let Some(other) = iter.next() else {
+                        return false;
+                    };
+                    if ![<a_ $I>].is_match(other) {
                         return false;
                     }
                 )+
+
+                if iter.next().is_some() {
+                    return false;
+                }
 
                 true
             }
