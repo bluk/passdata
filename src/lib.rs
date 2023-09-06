@@ -395,7 +395,11 @@ impl<'s> Passdata<'s> {
     ///
     /// - If the expected types are not compatible with the types in the data.
     /// - If there are multiple matching facts
-    pub fn query_only_one_edb<'a, T>(&'a self, pred: &str, values: T) -> Result<Option<T::ResultTy>>
+    pub fn query_exclusive_edb<'a, T>(
+        &'a self,
+        pred: &str,
+        values: T,
+    ) -> Result<Option<T::ResultTy>>
     where
         T: QueryResult<'a> + 'a,
     {
@@ -600,40 +604,40 @@ mod tests {
         data.add_fact("c", 1234)?;
         data.add_fact("d", "xyz")?;
 
-        assert_eq!(data.query_only_one_edb("a", (true,)), Ok(Some((true,))));
-        assert_eq!(data.query_only_one_edb("a", true), Ok(Some(true)));
-        assert_eq!(data.query_only_one_edb("a", AnyBool), Ok(Some(true)));
+        assert_eq!(data.query_exclusive_edb("a", (true,)), Ok(Some((true,))));
+        assert_eq!(data.query_exclusive_edb("a", true), Ok(Some(true)));
+        assert_eq!(data.query_exclusive_edb("a", AnyBool), Ok(Some(true)));
 
         assert_eq!(
-            data.query_only_one_edb("b", ("xyz", 1234, false)),
+            data.query_exclusive_edb("b", ("xyz", 1234, false)),
             Ok(Some(("xyz", 1234, false)))
         );
         assert_eq!(
-            data.query_only_one_edb("b", ("xyz", 1234, AnyBool)),
+            data.query_exclusive_edb("b", ("xyz", 1234, AnyBool)),
             Ok(Some(("xyz", 1234, false)))
         );
         assert_eq!(
-            data.query_only_one_edb("b", ("xyz", AnyNum, AnyBool)),
+            data.query_exclusive_edb("b", ("xyz", AnyNum, AnyBool)),
             Err(Error::with_kind(ErrorKind::MultipleMatchingFacts))
         );
 
-        assert_eq!(data.query_only_one_edb("c", AnyNum), Ok(Some(1234)));
-        assert_eq!(data.query_only_one_edb("c", 5678), Ok(None));
+        assert_eq!(data.query_exclusive_edb("c", AnyNum), Ok(Some(1234)));
+        assert_eq!(data.query_exclusive_edb("c", 5678), Ok(None));
 
-        assert_eq!(data.query_only_one_edb("d", AnyStr), Ok(Some("xyz")));
+        assert_eq!(data.query_exclusive_edb("d", AnyStr), Ok(Some("xyz")));
         assert_eq!(
-            data.query_only_one_edb("d", AnyBytes),
+            data.query_exclusive_edb("d", AnyBytes),
             Ok(Some("xyz".as_bytes()))
         );
-        assert_eq!(data.query_only_one_edb("d", "abc"), Ok(None));
-        assert_eq!(data.query_only_one_edb("d", "xyz"), Ok(Some("xyz")));
+        assert_eq!(data.query_exclusive_edb("d", "abc"), Ok(None));
+        assert_eq!(data.query_exclusive_edb("d", "xyz"), Ok(Some("xyz")));
         assert_eq!(
-            data.query_only_one_edb("d", String::from("xyz")),
+            data.query_exclusive_edb("d", String::from("xyz")),
             Ok(Some("xyz"))
         );
 
         assert_eq!(
-            data.query_only_one_edb("d", AnyConstant),
+            data.query_exclusive_edb("d", AnyConstant),
             Ok(Some("xyz".into()))
         );
 
@@ -657,7 +661,7 @@ mod tests {
         let error = data.contains_edb("a", (true,)).unwrap_err();
         assert!(error.is_schema_error());
 
-        let error = data.query_only_one_edb("a", AnyBool).unwrap_err();
+        let error = data.query_exclusive_edb("a", AnyBool).unwrap_err();
         assert!(error.is_schema_error());
     }
 
@@ -682,7 +686,7 @@ mod tests {
         assert!(error.is_schema_error());
 
         let error = data
-            .query_only_one_edb("a", (AnyBool, AnyConstant))
+            .query_exclusive_edb("a", (AnyBool, AnyConstant))
             .unwrap_err();
         assert!(error.is_schema_error());
 
@@ -709,7 +713,7 @@ mod tests {
         let error = data.contains_edb("a", (AnyStr,)).unwrap_err();
         assert!(error.is_schema_error());
 
-        let error = data.query_only_one_edb("a", "xyz").unwrap_err();
+        let error = data.query_exclusive_edb("a", "xyz").unwrap_err();
         assert!(error.is_schema_error());
 
         Ok(())
