@@ -448,6 +448,8 @@ mod tests {
     #[cfg(feature = "std")]
     use std::{string::String, vec};
 
+    use generic_array::arr;
+
     use crate::utils::{AnyBool, AnyBytes, AnyNum, AnyStr};
 
     #[test]
@@ -645,6 +647,12 @@ mod tests {
             Ok(Some(("xyz", 1234, false)))
         );
         assert_eq!(
+            data.query_exclusive_edb("b", ("xyz", 1234, AnyBool)),
+            Ok(Some(
+                arr![Constant<'_>; Constant::from("xyz"), Constant::from(1234), Constant::from(false)]
+            ))
+        );
+        assert_eq!(
             data.query_exclusive_edb::<_, (&str, i64, bool)>("b", ("xyz", AnyNum, AnyBool)),
             Err(Error::with_kind(ErrorKind::MultipleMatchingFacts))
         );
@@ -668,6 +676,10 @@ mod tests {
         assert_eq!(
             data.query_exclusive_edb("d", AnyBytes),
             Ok(Some("xyz".as_bytes()))
+        );
+        assert_eq!(
+            data.query_exclusive_edb("d", AnyBytes),
+            Ok(Some(arr![&[u8]; "xyz".as_bytes()]))
         );
         assert_eq!(data.query_exclusive_edb::<_, &[u8]>("d", "abc"), Ok(None));
         assert_eq!(data.query_exclusive_edb("d", "xyz"), Ok(Some("xyz")));

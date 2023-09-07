@@ -1,12 +1,13 @@
 #[cfg(all(feature = "alloc", not(feature = "std")))]
-use alloc::{borrow::Cow, string::String, vec::Vec};
+use alloc::{borrow::Cow, rc::Rc, string::String, vec::Vec};
 use core::{
+    cell::RefCell,
     convert::Infallible,
     fmt::{self, Display},
     marker::PhantomData,
 };
 #[cfg(feature = "std")]
-use std::{borrow::Cow, error, string::String, vec::Vec};
+use std::{borrow::Cow, error, rc::Rc, string::String, vec::Vec};
 
 use generic_array::{arr, ArrayLength, GenericArray};
 
@@ -637,18 +638,60 @@ where
     fn try_from_constants(
         value: GenericArray<values::Constant<'a>, Self::Length>,
     ) -> Result<Self, Self::Error> {
-        // TODO: There is an allocation here. Instead a custom written Iterator
-        // can be used which keeps producing `T` elements by using try_from and
-        // iterating through the `value` array.
-        //
-        // If an error is encountered, return None for that element and store the error.
-        // The from_exact_iter() should fail because the exact number of elements is not returned.
-        // Then, the error should be returned.
-        let values = value
-            .into_iter()
-            .map(|x| <T>::try_from(x))
-            .collect::<Result<Vec<_>, _>>()?;
-        GenericArray::from_exact_iter(values).ok_or(QueryResultError::InvalidLength)
+        struct Iter<I, T> {
+            inner: I,
+            error: Rc<RefCell<Option<QueryResultError>>>,
+            ty: PhantomData<T>,
+        }
+
+        impl<'a, I, E, T> Iterator for Iter<I, T>
+        where
+            I: Iterator<Item = values::Constant<'a>>,
+            T: TryFrom<values::Constant<'a>, Error = E> + Value,
+            QueryResultError: From<E>,
+        {
+            type Item = T;
+
+            fn next(&mut self) -> Option<Self::Item> {
+                if self.error.borrow().is_some() {
+                    return None;
+                }
+
+                let Some(item) = self.inner.next() else {
+                    return None;
+                };
+
+                match <T>::try_from(item) {
+                    Ok(item) => Some(item),
+                    Err(e) => {
+                        *self.error.borrow_mut() = Some(QueryResultError::from(e));
+                        None
+                    }
+                }
+            }
+
+            fn size_hint(&self) -> (usize, Option<usize>) {
+                self.inner.size_hint()
+            }
+        }
+
+        let err: Rc<RefCell<Option<QueryResultError>>> = Rc::new(RefCell::new(None));
+
+        let iter: Iter<_, T> = Iter {
+            inner: value.into_iter(),
+            error: err.clone(),
+            ty: PhantomData,
+        };
+
+        if let Some(arr) = GenericArray::from_exact_iter(iter) {
+            return Ok(arr);
+        }
+
+        if let Some(error) = *err.borrow() {
+            return Err(error);
+        }
+
+        Err(QueryResultError::InvalidLength)
     }
 }
 
