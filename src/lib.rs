@@ -27,7 +27,6 @@
     unused_lifetimes,
     unused_qualifications
 )]
-#![feature(impl_trait_projections)]
 
 #[cfg(all(feature = "alloc", not(feature = "std")))]
 extern crate alloc;
@@ -37,7 +36,7 @@ use alloc::vec::Vec;
 use core::iter;
 #[cfg(feature = "std")]
 use std::vec::Vec;
-use utils::TryFromConstantArray;
+use utils::{TryFromConstantArray, VoidResult};
 
 use either::Either;
 use generic_array::{functional::FunctionalSequence, ArrayLength, GenericArray};
@@ -52,7 +51,7 @@ pub(crate) mod values;
 use crate::{
     error::ErrorKind,
     facts::PredicateId,
-    utils::{IntoArray, QueryResult},
+    utils::{IntoArray, QueryArgs},
     values::{BytesId, ConstantId, ScalarId},
 };
 
@@ -335,14 +334,14 @@ impl<'s> Passdata<'s> {
     /// # Errors
     ///
     /// If the expected types are not compatible with the types in the data.
-    pub fn query_edb<'a, T>(
+    pub fn query_edb<'a, T, R>(
         &'a self,
         predicate: &str,
         args: T,
-    ) -> Result<impl Iterator<Item = T::ResultTy> + 'a>
+    ) -> Result<impl Iterator<Item = R> + 'a>
     where
-        T: QueryResult<'a> + 'a,
-        T::ResultTy: TryFromConstantArray<'a, Length = T::Length>,
+        T: QueryArgs<'a> + 'a,
+        R: TryFromConstantArray<'a, Length = T::Length> + 'a,
     {
         self.schema.validate_tys(predicate, &args.tys())?;
 
@@ -364,7 +363,7 @@ impl<'s> Passdata<'s> {
                         return None;
                     }
 
-                    let Ok(res) = T::ResultTy::try_from_constants(r) else {
+                    let Ok(res) = R::try_from_constants(r) else {
                         unreachable!()
                     };
 
@@ -381,10 +380,9 @@ impl<'s> Passdata<'s> {
     /// If the expected types are not compatible with the types in the data.
     pub fn contains_edb<'a, T>(&'a self, pred: &str, args: T) -> Result<bool>
     where
-        T: QueryResult<'a> + 'a,
-        T::ResultTy: TryFromConstantArray<'a, Length = T::Length>,
+        T: QueryArgs<'a> + 'a,
     {
-        self.query_edb(pred, args)
+        self.query_edb::<_, VoidResult<T::Length>>(pred, args)
             .map(|mut values| values.next().is_some())
     }
 
@@ -395,10 +393,10 @@ impl<'s> Passdata<'s> {
     ///
     /// - If the expected types are not compatible with the types in the data.
     /// - If there are multiple matching facts
-    pub fn query_exclusive_edb<'a, T>(&'a self, pred: &str, args: T) -> Result<Option<T::ResultTy>>
+    pub fn query_exclusive_edb<'a, T, R>(&'a self, pred: &str, args: T) -> Result<Option<R>>
     where
-        T: QueryResult<'a> + 'a,
-        T::ResultTy: TryFromConstantArray<'a, Length = T::Length>,
+        T: QueryArgs<'a> + 'a,
+        R: TryFromConstantArray<'a, Length = T::Length> + 'a,
     {
         let mut iter = self.query_edb(pred, args)?;
         let Some(first) = iter.next() else {
@@ -538,16 +536,21 @@ mod tests {
         assert_eq!(y.next(), Some(("xyz", 1234, false)));
         assert_eq!(y.next(), None);
 
-        let mut y = data.query_edb("c", ("xyz", 7, AnyBool))?;
+        let mut y = data
+            .query_edb::<_, (Constant<'_>, Constant<'_>, Constant<'_>)>("c", ("xyz", 7, AnyBool))?;
         assert_eq!(y.next(), None);
 
-        let mut y = data.query_edb("c", (AnyConstant, AnyConstant, AnyConstant))?;
+        let mut y = data.query_edb::<_, (Constant<'_>, Constant<'_>, Constant<'_>)>(
+            "c",
+            (AnyConstant, AnyConstant, AnyConstant),
+        )?;
         assert_eq!(y.next(), Some(("xyz".into(), 1234.into(), false.into())));
         assert_eq!(y.next(), Some(("abc".into(), 7.into(), true.into())));
         assert_eq!(y.next(), None);
 
-        let mut y = data.query_edb("c", ("abc", AnyConstant, AnyConstant))?;
-        assert_eq!(y.next(), Some(("abc", 7.into(), true.into())));
+        let mut y = data
+            .query_edb::<_, (&str, Constant<'_>, bool)>("c", ("abc", AnyConstant, AnyConstant))?;
+        assert_eq!(y.next(), Some(("abc", 7.into(), true)));
         assert_eq!(y.next(), None);
 
         Ok(())
@@ -614,19 +617,19 @@ mod tests {
             Ok(Some(("xyz", 1234, false)))
         );
         assert_eq!(
-            data.query_exclusive_edb("b", ("xyz", AnyNum, AnyBool)),
+            data.query_exclusive_edb::<_, (&str, i64, bool)>("b", ("xyz", AnyNum, AnyBool)),
             Err(Error::with_kind(ErrorKind::MultipleMatchingFacts))
         );
 
         assert_eq!(data.query_exclusive_edb("c", AnyNum), Ok(Some(1234)));
-        assert_eq!(data.query_exclusive_edb("c", 5678), Ok(None));
+        assert_eq!(data.query_exclusive_edb::<_, i64>("c", 5678), Ok(None));
 
         assert_eq!(data.query_exclusive_edb("d", AnyStr), Ok(Some("xyz")));
         assert_eq!(
             data.query_exclusive_edb("d", AnyBytes),
             Ok(Some("xyz".as_bytes()))
         );
-        assert_eq!(data.query_exclusive_edb("d", "abc"), Ok(None));
+        assert_eq!(data.query_exclusive_edb::<_, &[u8]>("d", "abc"), Ok(None));
         assert_eq!(data.query_exclusive_edb("d", "xyz"), Ok(Some("xyz")));
         assert_eq!(
             data.query_exclusive_edb("d", String::from("xyz")),
@@ -634,7 +637,7 @@ mod tests {
         );
 
         assert_eq!(
-            data.query_exclusive_edb("d", AnyConstant),
+            data.query_exclusive_edb::<_, Constant<'_>>("d", AnyConstant),
             Ok(Some("xyz".into()))
         );
 
@@ -646,7 +649,10 @@ mod tests {
         let schema = Schema::new();
         let mut data = Passdata::with_schema(&schema);
 
-        let error = match data.query_edb("c", ("abc", AnyConstant, AnyConstant)) {
+        let error = match data.query_edb::<_, (&str, Constant<'_>, Constant<'_>)>(
+            "c",
+            ("abc", AnyConstant, AnyConstant),
+        ) {
             Ok(_) => panic!("should have had a schema error"),
             Err(e) => e,
         };
@@ -658,7 +664,9 @@ mod tests {
         let error = data.contains_edb("a", (true,)).unwrap_err();
         assert!(error.is_schema_error());
 
-        let error = data.query_exclusive_edb("a", AnyBool).unwrap_err();
+        let error = data
+            .query_exclusive_edb::<_, bool>("a", AnyBool)
+            .unwrap_err();
         assert!(error.is_schema_error());
     }
 
@@ -670,7 +678,9 @@ mod tests {
 
         let mut data = Passdata::with_schema(&schema);
 
-        let error = match data.query_edb("b", (AnyConstant, AnyConstant)) {
+        let error = match data
+            .query_edb::<_, (Constant<'_>, Constant<'_>)>("b", (AnyConstant, AnyConstant))
+        {
             Ok(_) => panic!("should have had a schema error"),
             Err(e) => e,
         };
@@ -683,7 +693,7 @@ mod tests {
         assert!(error.is_schema_error());
 
         let error = data
-            .query_exclusive_edb("a", (AnyBool, AnyConstant))
+            .query_exclusive_edb::<_, (bool, Constant<'_>)>("a", (AnyBool, AnyConstant))
             .unwrap_err();
         assert!(error.is_schema_error());
 
@@ -698,7 +708,9 @@ mod tests {
 
         let mut data = Passdata::with_schema(&schema);
 
-        let error = match data.query_edb("b", (AnyConstant, AnyConstant, 1)) {
+        let error = match data
+            .query_edb::<_, (Constant<'_>, Constant<'_>, i64)>("b", (AnyConstant, AnyConstant, 1))
+        {
             Ok(_) => panic!("should have had a schema error"),
             Err(e) => e,
         };
@@ -710,7 +722,7 @@ mod tests {
         let error = data.contains_edb("a", (AnyStr,)).unwrap_err();
         assert!(error.is_schema_error());
 
-        let error = data.query_exclusive_edb("a", "xyz").unwrap_err();
+        let error = data.query_exclusive_edb::<_, &str>("a", "xyz").unwrap_err();
         assert!(error.is_schema_error());
 
         Ok(())

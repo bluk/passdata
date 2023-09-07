@@ -3,6 +3,7 @@ use alloc::{borrow::Cow, string::String, vec::Vec};
 use core::{
     convert::Infallible,
     fmt::{self, Display},
+    marker::PhantomData,
 };
 #[cfg(feature = "std")]
 use std::{borrow::Cow, error, string::String, vec::Vec};
@@ -397,15 +398,12 @@ impl From<Infallible> for QueryResultError {
 }
 
 /// Converts data into a query result.
-pub trait QueryResult<'a>
+pub trait QueryArgs<'a>
 where
     Self: Sized,
 {
     /// Number of arguments in the fact.
     type Length: ArrayLength<ConstantTy> + ArrayLength<values::Constant<'a>>;
-
-    /// Result type.
-    type ResultTy;
 
     fn tys(&self) -> GenericArray<ConstantTy, Self::Length>;
 
@@ -413,7 +411,7 @@ where
     fn is_match(&self, other: &GenericArray<values::Constant<'a>, Self::Length>) -> bool;
 }
 
-impl<'a, T, E> QueryResult<'a> for T
+impl<'a, T, E> QueryArgs<'a> for T
 where
     T::Value<'a>: TryFrom<values::Constant<'a>, Error = E>,
     T: QueryArg,
@@ -421,8 +419,6 @@ where
     T::Value<'a>: TryFromConstantArray<'a, Length = typenum::U1, Error = QueryResultError>,
 {
     type Length = typenum::U1;
-
-    type ResultTy = T::Value<'a>;
 
     fn tys(&self) -> GenericArray<ConstantTy, Self::Length> {
         generic_array::arr![ConstantTy; self.ty()]
@@ -440,15 +436,13 @@ macro_rules! impl_query_result {
 
         paste::paste! {
 
-        impl<'a, $($I),+, $([<E $I>]),+> QueryResult<'a> for ($($I,)+)
+        impl<'a, $($I),+, $([<E $I>]),+> QueryArgs<'a> for ($($I,)+)
             where $($I::Value<'a> : TryFrom<values::Constant<'a>, Error =  [<E $I>]>),+,
             $($I: QueryArg),+,
             $(QueryResultError: From<[<E $I>]>),+,
             Self: Sized
         {
             type Length = count_ident_typenum!($($I),+);
-
-            type ResultTy = ($($I::Value<'a>,)+);
 
             fn tys(&self) -> GenericArray<ConstantTy, Self::Length> {
                 #[allow(non_snake_case)]
@@ -494,6 +488,25 @@ pub trait TryFromConstantArray<'a>: Sized {
     fn try_from_constants(
         value: GenericArray<values::Constant<'a>, Self::Length>,
     ) -> Result<Self, Self::Error>;
+}
+
+pub(crate) struct VoidResult<L> {
+    ty: PhantomData<L>,
+}
+
+impl<'a, L> TryFromConstantArray<'a> for VoidResult<L>
+where
+    L: ArrayLength<values::Constant<'a>>,
+{
+    type Length = L;
+
+    type Error = Infallible;
+
+    fn try_from_constants(
+        _: GenericArray<values::Constant<'a>, Self::Length>,
+    ) -> Result<Self, Self::Error> {
+        Ok(VoidResult { ty: PhantomData })
+    }
 }
 
 impl<'a, T, E> TryFromConstantArray<'a> for T
