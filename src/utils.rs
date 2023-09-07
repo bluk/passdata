@@ -104,10 +104,6 @@ impl_into_array_tuple!(dummy, T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, 
 /// [`AnyBytes`], [`AnyStr`], or [`AnyConstant`] which match values which match
 /// the named type.
 pub trait QueryArg {
-    /// The result type. A tuple argument is converted into the `Value` type
-    /// from a [`values::Constant`].
-    type Value<'a>: TryFrom<values::Constant<'a>>;
-
     /// The argument's type. Used to verify the argument matches the actual schema type.
     fn ty(&self) -> ConstantTy;
 
@@ -120,8 +116,6 @@ pub trait QueryArg {
 }
 
 impl<'a> QueryArg for values::Constant<'a> {
-    type Value<'b> = values::Constant<'b>;
-
     fn ty(&self) -> ConstantTy {
         match self {
             values::Constant::Bool(_) => ConstantTy::Bool,
@@ -136,8 +130,6 @@ impl<'a> QueryArg for values::Constant<'a> {
 }
 
 impl QueryArg for bool {
-    type Value<'a> = bool;
-
     fn ty(&self) -> ConstantTy {
         ConstantTy::Bool
     }
@@ -155,8 +147,6 @@ impl QueryArg for bool {
 pub struct AnyBool;
 
 impl QueryArg for AnyBool {
-    type Value<'a> = bool;
-
     fn ty(&self) -> ConstantTy {
         ConstantTy::Bool
     }
@@ -170,8 +160,6 @@ impl QueryArg for AnyBool {
 }
 
 impl QueryArg for i64 {
-    type Value<'a> = i64;
-
     fn ty(&self) -> ConstantTy {
         ConstantTy::Num
     }
@@ -189,8 +177,6 @@ impl QueryArg for i64 {
 pub struct AnyNum;
 
 impl QueryArg for AnyNum {
-    type Value<'a> = i64;
-
     fn ty(&self) -> ConstantTy {
         ConstantTy::Num
     }
@@ -204,8 +190,6 @@ impl QueryArg for AnyNum {
 }
 
 impl<'b> QueryArg for &'b str {
-    type Value<'a> = &'a str;
-
     fn ty(&self) -> ConstantTy {
         ConstantTy::Bytes
     }
@@ -219,8 +203,6 @@ impl<'b> QueryArg for &'b str {
 }
 
 impl QueryArg for String {
-    type Value<'a> = &'a str;
-
     fn ty(&self) -> ConstantTy {
         ConstantTy::Bytes
     }
@@ -234,8 +216,6 @@ impl QueryArg for String {
 }
 
 impl<'b> QueryArg for Cow<'b, str> {
-    type Value<'a> = &'a str;
-
     fn ty(&self) -> ConstantTy {
         ConstantTy::Bytes
     }
@@ -249,8 +229,6 @@ impl<'b> QueryArg for Cow<'b, str> {
 }
 
 impl<'b> QueryArg for &'b [u8] {
-    type Value<'a> = &'a [u8];
-
     fn ty(&self) -> ConstantTy {
         ConstantTy::Bytes
     }
@@ -264,8 +242,6 @@ impl<'b> QueryArg for &'b [u8] {
 }
 
 impl QueryArg for Vec<u8> {
-    type Value<'a> = &'a [u8];
-
     fn ty(&self) -> ConstantTy {
         ConstantTy::Bytes
     }
@@ -279,8 +255,6 @@ impl QueryArg for Vec<u8> {
 }
 
 impl<'b> QueryArg for Cow<'b, [u8]> {
-    type Value<'a> = &'a [u8];
-
     fn ty(&self) -> ConstantTy {
         ConstantTy::Bytes
     }
@@ -298,8 +272,6 @@ impl<'b> QueryArg for Cow<'b, [u8]> {
 pub struct AnyStr;
 
 impl QueryArg for AnyStr {
-    type Value<'a> = &'a str;
-
     fn ty(&self) -> ConstantTy {
         ConstantTy::Bytes
     }
@@ -317,8 +289,6 @@ impl QueryArg for AnyStr {
 pub struct AnyBytes;
 
 impl QueryArg for AnyBytes {
-    type Value<'a> = &'a [u8];
-
     fn ty(&self) -> ConstantTy {
         ConstantTy::Bytes
     }
@@ -336,8 +306,6 @@ impl QueryArg for AnyBytes {
 pub struct AnyConstant;
 
 impl QueryArg for AnyConstant {
-    type Value<'a> = crate::values::Constant<'a>;
-
     fn ty(&self) -> ConstantTy {
         ConstantTy::Unknown
     }
@@ -411,12 +379,9 @@ where
     fn is_match(&self, other: &GenericArray<values::Constant<'a>, Self::Length>) -> bool;
 }
 
-impl<'a, T, E> QueryArgs<'a> for T
+impl<'a, T> QueryArgs<'a> for T
 where
-    T::Value<'a>: TryFrom<values::Constant<'a>, Error = E>,
     T: QueryArg,
-    QueryResultError: From<E>,
-    T::Value<'a>: TryFromConstantArray<'a, Length = typenum::U1, Error = QueryResultError>,
 {
     type Length = typenum::U1;
 
@@ -436,10 +401,9 @@ macro_rules! impl_query_result {
 
         paste::paste! {
 
-        impl<'a, $($I),+, $([<E $I>]),+> QueryArgs<'a> for ($($I,)+)
-            where $($I::Value<'a> : TryFrom<values::Constant<'a>, Error =  [<E $I>]>),+,
+        impl<'a, $($I),+,> QueryArgs<'a> for ($($I,)+)
+            where
             $($I: QueryArg),+,
-            $(QueryResultError: From<[<E $I>]>),+,
             Self: Sized
         {
             type Length = count_ident_typenum!($($I),+);
