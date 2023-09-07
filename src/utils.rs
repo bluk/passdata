@@ -8,7 +8,7 @@ use core::{
 #[cfg(feature = "std")]
 use std::{borrow::Cow, error, string::String, vec::Vec};
 
-use generic_array::{ArrayLength, GenericArray};
+use generic_array::{arr, ArrayLength, GenericArray};
 
 use crate::{
     values::{self, InvalidType},
@@ -480,10 +480,59 @@ macro_rules! impl_query_result {
 
 impl_query_result!(dummy, T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12);
 
+#[derive(Debug, Clone, Copy)]
+pub enum ValueConversionTy {
+    /// Boolean
+    Bool,
+    /// Byte slice
+    Bytes,
+    /// Number
+    Num,
+    /// Any value type
+    Any,
+}
+
+pub trait Value {
+    fn supported_ty() -> ValueConversionTy;
+}
+
+impl Value for bool {
+    fn supported_ty() -> ValueConversionTy {
+        ValueConversionTy::Bool
+    }
+}
+
+impl Value for i64 {
+    fn supported_ty() -> ValueConversionTy {
+        ValueConversionTy::Num
+    }
+}
+
+impl<'a> Value for &'a [u8] {
+    fn supported_ty() -> ValueConversionTy {
+        ValueConversionTy::Bytes
+    }
+}
+
+impl<'a> Value for &'a str {
+    fn supported_ty() -> ValueConversionTy {
+        ValueConversionTy::Bytes
+    }
+}
+
+impl<'a> Value for values::Constant<'a> {
+    fn supported_ty() -> ValueConversionTy {
+        ValueConversionTy::Any
+    }
+}
+
 pub trait TryFromConstantArray<'a>: Sized {
-    type Length: ArrayLength<values::Constant<'a>>;
+    type Length: ArrayLength<ValueConversionTy> + ArrayLength<values::Constant<'a>>;
 
     type Error;
+
+    /// Return the types which are required to convert from.
+    fn required_tys() -> GenericArray<ValueConversionTy, Self::Length>;
 
     fn try_from_constants(
         value: GenericArray<values::Constant<'a>, Self::Length>,
@@ -496,11 +545,18 @@ pub(crate) struct VoidResult<L> {
 
 impl<'a, L> TryFromConstantArray<'a> for VoidResult<L>
 where
-    L: ArrayLength<values::Constant<'a>>,
+    L: ArrayLength<ValueConversionTy> + ArrayLength<values::Constant<'a>>,
 {
     type Length = L;
 
     type Error = Infallible;
+
+    fn required_tys() -> GenericArray<ValueConversionTy, Self::Length> {
+        GenericArray::from_exact_iter(
+            core::iter::repeat(ValueConversionTy::Any).take(Self::Length::to_usize()),
+        )
+        .unwrap()
+    }
 
     fn try_from_constants(
         _: GenericArray<values::Constant<'a>, Self::Length>,
@@ -511,12 +567,16 @@ where
 
 impl<'a, T, E> TryFromConstantArray<'a> for T
 where
-    T: TryFrom<values::Constant<'a>, Error = E>,
+    T: TryFrom<values::Constant<'a>, Error = E> + Value,
     QueryResultError: From<E>,
 {
     type Length = typenum::U1;
 
     type Error = QueryResultError;
+
+    fn required_tys() -> GenericArray<ValueConversionTy, Self::Length> {
+        arr![ValueConversionTy; T::supported_ty()]
+    }
 
     fn try_from_constants(
         value: GenericArray<values::Constant<'a>, Self::Length>,
@@ -535,13 +595,20 @@ where
 
 impl<'a, T, E, L> TryFromConstantArray<'a> for GenericArray<T, L>
 where
-    T: TryFrom<values::Constant<'a>, Error = E>,
+    T: TryFrom<values::Constant<'a>, Error = E> + Value,
     QueryResultError: From<E>,
-    L: ArrayLength<values::Constant<'a>> + ArrayLength<T>,
+    L: ArrayLength<ValueConversionTy> + ArrayLength<values::Constant<'a>> + ArrayLength<T>,
 {
     type Length = L;
 
     type Error = QueryResultError;
+
+    fn required_tys() -> GenericArray<ValueConversionTy, Self::Length> {
+        GenericArray::from_exact_iter(
+            core::iter::repeat(T::supported_ty()).take(Self::Length::to_usize()),
+        )
+        .unwrap()
+    }
 
     fn try_from_constants(
         value: GenericArray<values::Constant<'a>, Self::Length>,
@@ -570,12 +637,16 @@ macro_rules! impl_try_from_constant_array_tuple {
 
         impl<'a, $($I),+, $([<E $I>]),+> TryFromConstantArray<'a> for ($($I,)+)
         where
-            $($I : TryFrom<values::Constant<'a>, Error =  [<E $I>]>),+,
+            $($I : TryFrom<values::Constant<'a>, Error =  [<E $I>]> + Value),+,
             $(QueryResultError: From<[<E $I>]>),+,
         {
             type Length = count_ident_typenum!($($I),+);
 
             type Error = QueryResultError;
+
+            fn required_tys() -> GenericArray<ValueConversionTy, Self::Length> {
+                generic_array::arr![ValueConversionTy; $($I::supported_ty()),+]
+            }
 
             fn try_from_constants(
                 value: GenericArray<values::Constant<'a>, Self::Length>,

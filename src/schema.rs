@@ -9,6 +9,7 @@ use std::collections::BTreeMap;
 
 use crate::{
     error::{Error, ErrorKind, Result},
+    utils::ValueConversionTy,
     Constant,
 };
 
@@ -46,6 +47,19 @@ impl ConstantTy {
         }
 
         false
+    }
+
+    pub(crate) fn is_supported(self, other: ValueConversionTy) -> bool {
+        match (self, other) {
+            (ConstantTy::Unknown, _) => unreachable!(),
+            (_, ValueConversionTy::Any)
+            | (ConstantTy::Bool, ValueConversionTy::Bool)
+            | (ConstantTy::Bytes, ValueConversionTy::Bytes)
+            | (ConstantTy::Num, ValueConversionTy::Num) => true,
+            (ConstantTy::Bool | ConstantTy::Num, ValueConversionTy::Bytes)
+            | (ConstantTy::Bool | ConstantTy::Bytes, ValueConversionTy::Num)
+            | (ConstantTy::Num | ConstantTy::Bytes, ValueConversionTy::Bool) => false,
+        }
     }
 }
 
@@ -104,6 +118,28 @@ impl<'a> Schema<'a> {
 
         for (expected_ty, actual_ty) in tys.iter().zip(actual_tys) {
             if !expected_ty.is_match(*actual_ty) {
+                return Err(Error::with_kind(ErrorKind::MismatchSchemaTys));
+            }
+        }
+
+        Ok(())
+    }
+
+    pub(crate) fn validate_conversions(
+        &self,
+        predicate: &'a str,
+        actual_tys: &[ValueConversionTy],
+    ) -> Result<()> {
+        let Some(tys) = self.get_tys(predicate) else {
+            return Err(Error::with_kind(ErrorKind::UnknownPredicate));
+        };
+
+        if tys.len() != actual_tys.len() {
+            return Err(Error::with_kind(ErrorKind::MismatchSchemaTys));
+        }
+
+        for (actual_ty, value_ty) in tys.iter().zip(actual_tys) {
+            if !actual_ty.is_supported(*value_ty) {
                 return Err(Error::with_kind(ErrorKind::MismatchSchemaTys));
             }
         }
