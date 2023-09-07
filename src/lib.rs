@@ -329,6 +329,29 @@ impl<'s> Passdata<'s> {
         Ok(())
     }
 
+    /// Add an exclusive fact explicitly.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the values do not match the expected types for the predicate.
+    ///
+    /// If the fact already has been added, then an error is also returned.
+    pub fn add_exclusive_fact<'a, T>(&mut self, predicate: &str, constants: T) -> Result<()>
+    where
+        T: IntoArray<Constant<'a>>,
+        T::Length: ArrayLength<ExpectedConstantTy>,
+        <T as IntoArray<Constant<'a>>>::Length: ArrayLength<ConstantTy>,
+        <T as IntoArray<Constant<'a>>>::Length: ArrayLength<ConstantId>,
+    {
+        let constants = constants.into_array();
+
+        if self.edb_iter(predicate)?.next().is_some() {
+            return Err(Error::with_kind(ErrorKind::ExistingFact));
+        }
+
+        self.add_fact(predicate, constants)
+    }
+
     /// Query for an explictly declared fact.
     ///
     /// # Errors
@@ -729,6 +752,33 @@ mod tests {
 
         let error = data.query_exclusive_edb::<_, &str>("a", "xyz").unwrap_err();
         assert!(error.is_schema_error());
+
+        Ok(())
+    }
+
+    #[test]
+    fn add_exclusive_fact() -> Result<()> {
+        let mut schema = Schema::new();
+        schema.insert_tys("a", &[ConstantTy::Bool])?;
+        schema.insert_tys("b", &[ConstantTy::Bytes, ConstantTy::Num, ConstantTy::Bool])?;
+
+        let mut data = Passdata::with_schema(&schema);
+
+        data.add_exclusive_fact("a", true)?;
+        assert_eq!(
+            data.add_exclusive_fact("a", true),
+            Err(Error::with_kind(ErrorKind::ExistingFact))
+        );
+        assert_eq!(
+            data.add_exclusive_fact("a", false),
+            Err(Error::with_kind(ErrorKind::ExistingFact))
+        );
+
+        data.add_exclusive_fact("b", ([1, 2, 3].as_slice(), 456, false))?;
+        assert_eq!(
+            data.add_exclusive_fact("b", ([].as_slice(), 0, true)),
+            Err(Error::with_kind(ErrorKind::ExistingFact))
+        );
 
         Ok(())
     }

@@ -44,6 +44,7 @@ impl Error {
         match self.inner.kind {
             ErrorKind::QueryResultError(_)
             | ErrorKind::MultipleMatchingFacts
+            | ErrorKind::ExistingFact
             | ErrorKind::DuplicateSchema
             | ErrorKind::FactTermsError(_)
             | ErrorKind::InvalidContextValue
@@ -121,6 +122,8 @@ pub(crate) enum ErrorKind {
     InvalidContextValue,
     /// The context cannot add any more data
     ContextFull,
+    /// A fact already exists
+    ExistingFact,
 }
 
 #[cfg(feature = "std")]
@@ -132,7 +135,8 @@ impl error::Error for ErrorKind {
             | ErrorKind::UnknownPredicate
             | ErrorKind::MismatchSchemaTys
             | ErrorKind::InvalidContextValue
-            | ErrorKind::ContextFull => None,
+            | ErrorKind::ContextFull
+            | ErrorKind::ExistingFact => None,
             ErrorKind::QueryResultError(e) => Some(e),
             ErrorKind::FactTermsError(e) => Some(e),
         }
@@ -152,6 +156,7 @@ impl Display for ErrorKind {
             ErrorKind::FactTermsError(e) => Display::fmt(e, f),
             ErrorKind::InvalidContextValue => f.write_str("value cannot be added to context"),
             ErrorKind::ContextFull => f.write_str("context cannot add more data"),
+            ErrorKind::ExistingFact => f.write_str("fact already exists"),
         }
     }
 }
@@ -169,6 +174,7 @@ impl fmt::Debug for ErrorKind {
             ErrorKind::FactTermsError(e) => fmt::Debug::fmt(e, f),
             ErrorKind::InvalidContextValue => f.write_str("value cannot be added to context"),
             ErrorKind::ContextFull => f.write_str("context cannot add more data"),
+            ErrorKind::ExistingFact => f.write_str("fact already exists"),
         }
     }
 }
