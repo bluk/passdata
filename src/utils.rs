@@ -514,7 +514,31 @@ impl<'a> Value for &'a [u8] {
     }
 }
 
+impl Value for Vec<u8> {
+    fn supported_ty() -> ExpectedConstantTy {
+        ExpectedConstantTy::Bytes
+    }
+}
+
+impl<'a> Value for Cow<'a, [u8]> {
+    fn supported_ty() -> ExpectedConstantTy {
+        ExpectedConstantTy::Bytes
+    }
+}
+
 impl<'a> Value for &'a str {
+    fn supported_ty() -> ExpectedConstantTy {
+        ExpectedConstantTy::Bytes
+    }
+}
+
+impl Value for String {
+    fn supported_ty() -> ExpectedConstantTy {
+        ExpectedConstantTy::Bytes
+    }
+}
+
+impl<'a> Value for Cow<'a, str> {
     fn supported_ty() -> ExpectedConstantTy {
         ExpectedConstantTy::Bytes
     }

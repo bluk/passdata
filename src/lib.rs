@@ -623,7 +623,7 @@ mod tests {
     }
 
     #[test]
-    fn query_only_one_edb() -> Result<()> {
+    fn query_exclusive_edb() -> Result<()> {
         let mut data = Passdata::with_schema(&QUERY_ONLY_ONE_EDB_SCHEMA);
 
         data.add_fact("a", true)?;
@@ -653,6 +653,18 @@ mod tests {
         assert_eq!(data.query_exclusive_edb::<_, i64>("c", 5678), Ok(None));
 
         assert_eq!(data.query_exclusive_edb("d", AnyStr), Ok(Some("xyz")));
+        assert_eq!(
+            data.query_exclusive_edb("d", AnyStr),
+            Ok(Some(String::from("xyz")))
+        );
+        assert_eq!(
+            data.query_exclusive_edb("d", AnyStr),
+            Ok(Some("xyz".as_bytes()))
+        );
+        assert_eq!(
+            data.query_exclusive_edb("d", AnyStr),
+            Ok(Some("xyz".as_bytes().to_vec()))
+        );
         assert_eq!(
             data.query_exclusive_edb("d", AnyBytes),
             Ok(Some("xyz".as_bytes()))

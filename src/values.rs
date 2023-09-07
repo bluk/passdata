@@ -34,10 +34,10 @@
 //! absolute limit to the amount of data that can be encoded.
 
 #[cfg(all(feature = "alloc", not(feature = "std")))]
-use alloc::borrow::Cow;
+use alloc::{borrow::Cow, string::String, vec::Vec};
 use core::fmt;
 #[cfg(feature = "std")]
-use std::{borrow::Cow, error};
+use std::{borrow::Cow, error, string::String, vec::Vec};
 
 use crate::{
     error::{Error, ErrorKind},
@@ -188,6 +188,17 @@ impl<'a> TryFrom<Constant<'a>> for &'a [u8] {
     }
 }
 
+impl<'a> TryFrom<Constant<'a>> for Vec<u8> {
+    type Error = InvalidType;
+
+    fn try_from(value: Constant<'a>) -> Result<Self, Self::Error> {
+        match value {
+            Constant::Bool(_) | Constant::Num(_) => Err(InvalidType),
+            Constant::Bytes(bytes) => Ok(bytes.to_vec()),
+        }
+    }
+}
+
 impl<'a> TryFrom<Constant<'a>> for Cow<'a, [u8]> {
     type Error = InvalidType;
 
@@ -206,6 +217,19 @@ impl<'a> TryFrom<Constant<'a>> for &'a str {
         match value {
             Constant::Bool(_) | Constant::Num(_) => Err(InvalidType),
             Constant::Bytes(bytes) => Ok(core::str::from_utf8(bytes).map_err(|_| InvalidType)?),
+        }
+    }
+}
+
+impl<'a> TryFrom<Constant<'a>> for String {
+    type Error = InvalidType;
+
+    fn try_from(value: Constant<'a>) -> Result<Self, Self::Error> {
+        match value {
+            Constant::Bool(_) | Constant::Num(_) => Err(InvalidType),
+            Constant::Bytes(bytes) => {
+                Ok(String::from_utf8(bytes.to_vec()).map_err(|_| InvalidType)?)
+            }
         }
     }
 }
