@@ -9,15 +9,13 @@ use std::collections::BTreeMap;
 
 use crate::{
     error::{Error, ErrorKind, Result},
-    utils::ValueConversionTy,
+    utils::ExpectedConstantTy,
     Constant,
 };
 
 /// Type of a constant
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConstantTy {
-    /// Unknown
-    Unknown,
     /// Boolean
     Bool,
     /// Number
@@ -38,27 +36,18 @@ impl<'a> From<Constant<'a>> for ConstantTy {
 
 impl ConstantTy {
     pub(crate) fn is_match(self, other: ConstantTy) -> bool {
-        if self == other {
-            return true;
-        }
-
-        if self == Self::Unknown || other == Self::Unknown {
-            return true;
-        }
-
-        false
+        self == other
     }
 
-    pub(crate) fn is_supported(self, other: ValueConversionTy) -> bool {
+    pub(crate) fn is_supported(self, other: ExpectedConstantTy) -> bool {
         match (self, other) {
-            (ConstantTy::Unknown, _) => unreachable!(),
-            (_, ValueConversionTy::Any)
-            | (ConstantTy::Bool, ValueConversionTy::Bool)
-            | (ConstantTy::Bytes, ValueConversionTy::Bytes)
-            | (ConstantTy::Num, ValueConversionTy::Num) => true,
-            (ConstantTy::Bool | ConstantTy::Num, ValueConversionTy::Bytes)
-            | (ConstantTy::Bool | ConstantTy::Bytes, ValueConversionTy::Num)
-            | (ConstantTy::Num | ConstantTy::Bytes, ValueConversionTy::Bool) => false,
+            (_, ExpectedConstantTy::Any)
+            | (ConstantTy::Bool, ExpectedConstantTy::Bool)
+            | (ConstantTy::Bytes, ExpectedConstantTy::Bytes)
+            | (ConstantTy::Num, ExpectedConstantTy::Num) => true,
+            (ConstantTy::Bool | ConstantTy::Num, ExpectedConstantTy::Bytes)
+            | (ConstantTy::Bool | ConstantTy::Bytes, ExpectedConstantTy::Num)
+            | (ConstantTy::Num | ConstantTy::Bytes, ExpectedConstantTy::Bool) => false,
         }
     }
 }
@@ -128,7 +117,7 @@ impl<'a> Schema<'a> {
     pub(crate) fn validate_conversions(
         &self,
         predicate: &'a str,
-        actual_tys: &[ValueConversionTy],
+        actual_tys: &[ExpectedConstantTy],
     ) -> Result<()> {
         let Some(tys) = self.get_tys(predicate) else {
             return Err(Error::with_kind(ErrorKind::UnknownPredicate));

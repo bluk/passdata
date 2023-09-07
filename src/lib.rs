@@ -36,7 +36,7 @@ use alloc::vec::Vec;
 use core::iter;
 #[cfg(feature = "std")]
 use std::vec::Vec;
-use utils::{TryFromConstantArray, ValueConversionTy, VoidResult};
+use utils::{ExpectedConstantTy, TryFromConstantArray, VoidResult};
 
 use either::Either;
 use generic_array::{functional::FunctionalSequence, ArrayLength, GenericArray};
@@ -342,9 +342,9 @@ impl<'s> Passdata<'s> {
     where
         T: QueryArgs<'a> + 'a,
         R: TryFromConstantArray<'a, Length = T::Length> + 'a,
-        T::Length: ArrayLength<ValueConversionTy>,
+        T::Length: ArrayLength<ExpectedConstantTy>,
     {
-        self.schema.validate_tys(predicate, &args.tys())?;
+        self.schema.validate_conversions(predicate, &args.tys())?;
         self.schema
             .validate_conversions(predicate, &R::required_tys())?;
 
@@ -384,7 +384,7 @@ impl<'s> Passdata<'s> {
     pub fn contains_edb<'a, T>(&'a self, pred: &str, args: T) -> Result<bool>
     where
         T: QueryArgs<'a> + 'a,
-        T::Length: ArrayLength<ValueConversionTy>,
+        T::Length: ArrayLength<ExpectedConstantTy>,
     {
         self.query_edb::<_, VoidResult<T::Length>>(pred, args)
             .map(|mut values| values.next().is_some())
@@ -401,7 +401,7 @@ impl<'s> Passdata<'s> {
     where
         T: QueryArgs<'a> + 'a,
         R: TryFromConstantArray<'a, Length = T::Length> + 'a,
-        T::Length: ArrayLength<ValueConversionTy>,
+        T::Length: ArrayLength<ExpectedConstantTy>,
     {
         let mut iter = self.query_edb(pred, args)?;
         let Some(first) = iter.next() else {

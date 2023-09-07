@@ -10,10 +10,7 @@ use std::{borrow::Cow, error, string::String, vec::Vec};
 
 use generic_array::{arr, ArrayLength, GenericArray};
 
-use crate::{
-    values::{self, InvalidType},
-    ConstantTy,
-};
+use crate::values::{self, InvalidType};
 
 macro_rules! count_ident {
     ($i0:ident) => {1};
@@ -29,6 +26,18 @@ macro_rules! ignore_ident {
     ($id:ident, $($t:tt)*) => {
         $($t)*
     };
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum ExpectedConstantTy {
+    /// Boolean
+    Bool,
+    /// Byte slice
+    Bytes,
+    /// Number
+    Num,
+    /// Any value type
+    Any,
 }
 
 /// Converts data into an array.
@@ -104,8 +113,9 @@ impl_into_array_tuple!(dummy, T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, 
 /// [`AnyBytes`], [`AnyStr`], or [`AnyConstant`] which match values which match
 /// the named type.
 pub trait QueryArg {
-    /// The argument's type. Used to verify the argument matches the actual schema type.
-    fn ty(&self) -> ConstantTy;
+    /// The argument's expected type. Used to verify the argument matches the
+    /// actual schema type.
+    fn ty(&self) -> ExpectedConstantTy;
 
     /// Determines if the found value matches the expected argument. In most
     /// cases, the method is implemented by doing a simple equality comparision.
@@ -116,11 +126,11 @@ pub trait QueryArg {
 }
 
 impl<'a> QueryArg for values::Constant<'a> {
-    fn ty(&self) -> ConstantTy {
+    fn ty(&self) -> ExpectedConstantTy {
         match self {
-            values::Constant::Bool(_) => ConstantTy::Bool,
-            values::Constant::Num(_) => ConstantTy::Num,
-            values::Constant::Bytes(_) => ConstantTy::Bytes,
+            values::Constant::Bool(_) => ExpectedConstantTy::Bool,
+            values::Constant::Num(_) => ExpectedConstantTy::Num,
+            values::Constant::Bytes(_) => ExpectedConstantTy::Bytes,
         }
     }
 
@@ -130,8 +140,8 @@ impl<'a> QueryArg for values::Constant<'a> {
 }
 
 impl QueryArg for bool {
-    fn ty(&self) -> ConstantTy {
-        ConstantTy::Bool
+    fn ty(&self) -> ExpectedConstantTy {
+        ExpectedConstantTy::Bool
     }
 
     fn is_match(&self, other: values::Constant<'_>) -> bool {
@@ -147,8 +157,8 @@ impl QueryArg for bool {
 pub struct AnyBool;
 
 impl QueryArg for AnyBool {
-    fn ty(&self) -> ConstantTy {
-        ConstantTy::Bool
+    fn ty(&self) -> ExpectedConstantTy {
+        ExpectedConstantTy::Bool
     }
 
     fn is_match(&self, other: values::Constant<'_>) -> bool {
@@ -160,8 +170,8 @@ impl QueryArg for AnyBool {
 }
 
 impl QueryArg for i64 {
-    fn ty(&self) -> ConstantTy {
-        ConstantTy::Num
+    fn ty(&self) -> ExpectedConstantTy {
+        ExpectedConstantTy::Num
     }
 
     fn is_match(&self, other: values::Constant<'_>) -> bool {
@@ -177,8 +187,8 @@ impl QueryArg for i64 {
 pub struct AnyNum;
 
 impl QueryArg for AnyNum {
-    fn ty(&self) -> ConstantTy {
-        ConstantTy::Num
+    fn ty(&self) -> ExpectedConstantTy {
+        ExpectedConstantTy::Num
     }
 
     fn is_match(&self, other: values::Constant<'_>) -> bool {
@@ -190,8 +200,8 @@ impl QueryArg for AnyNum {
 }
 
 impl<'b> QueryArg for &'b str {
-    fn ty(&self) -> ConstantTy {
-        ConstantTy::Bytes
+    fn ty(&self) -> ExpectedConstantTy {
+        ExpectedConstantTy::Bytes
     }
 
     fn is_match(&self, other: values::Constant<'_>) -> bool {
@@ -203,8 +213,8 @@ impl<'b> QueryArg for &'b str {
 }
 
 impl QueryArg for String {
-    fn ty(&self) -> ConstantTy {
-        ConstantTy::Bytes
+    fn ty(&self) -> ExpectedConstantTy {
+        ExpectedConstantTy::Bytes
     }
 
     fn is_match(&self, other: values::Constant<'_>) -> bool {
@@ -216,8 +226,8 @@ impl QueryArg for String {
 }
 
 impl<'b> QueryArg for Cow<'b, str> {
-    fn ty(&self) -> ConstantTy {
-        ConstantTy::Bytes
+    fn ty(&self) -> ExpectedConstantTy {
+        ExpectedConstantTy::Bytes
     }
 
     fn is_match(&self, other: values::Constant<'_>) -> bool {
@@ -229,8 +239,8 @@ impl<'b> QueryArg for Cow<'b, str> {
 }
 
 impl<'b> QueryArg for &'b [u8] {
-    fn ty(&self) -> ConstantTy {
-        ConstantTy::Bytes
+    fn ty(&self) -> ExpectedConstantTy {
+        ExpectedConstantTy::Bytes
     }
 
     fn is_match(&self, other: values::Constant<'_>) -> bool {
@@ -242,8 +252,8 @@ impl<'b> QueryArg for &'b [u8] {
 }
 
 impl QueryArg for Vec<u8> {
-    fn ty(&self) -> ConstantTy {
-        ConstantTy::Bytes
+    fn ty(&self) -> ExpectedConstantTy {
+        ExpectedConstantTy::Bytes
     }
 
     fn is_match(&self, other: values::Constant<'_>) -> bool {
@@ -255,8 +265,8 @@ impl QueryArg for Vec<u8> {
 }
 
 impl<'b> QueryArg for Cow<'b, [u8]> {
-    fn ty(&self) -> ConstantTy {
-        ConstantTy::Bytes
+    fn ty(&self) -> ExpectedConstantTy {
+        ExpectedConstantTy::Bytes
     }
 
     fn is_match(&self, other: values::Constant<'_>) -> bool {
@@ -272,8 +282,8 @@ impl<'b> QueryArg for Cow<'b, [u8]> {
 pub struct AnyStr;
 
 impl QueryArg for AnyStr {
-    fn ty(&self) -> ConstantTy {
-        ConstantTy::Bytes
+    fn ty(&self) -> ExpectedConstantTy {
+        ExpectedConstantTy::Bytes
     }
 
     fn is_match(&self, other: values::Constant<'_>) -> bool {
@@ -289,8 +299,8 @@ impl QueryArg for AnyStr {
 pub struct AnyBytes;
 
 impl QueryArg for AnyBytes {
-    fn ty(&self) -> ConstantTy {
-        ConstantTy::Bytes
+    fn ty(&self) -> ExpectedConstantTy {
+        ExpectedConstantTy::Bytes
     }
 
     fn is_match(&self, other: values::Constant<'_>) -> bool {
@@ -306,8 +316,8 @@ impl QueryArg for AnyBytes {
 pub struct AnyConstant;
 
 impl QueryArg for AnyConstant {
-    fn ty(&self) -> ConstantTy {
-        ConstantTy::Unknown
+    fn ty(&self) -> ExpectedConstantTy {
+        ExpectedConstantTy::Any
     }
 
     fn is_match(&self, _: values::Constant<'_>) -> bool {
@@ -371,9 +381,9 @@ where
     Self: Sized,
 {
     /// Number of arguments in the fact.
-    type Length: ArrayLength<ConstantTy> + ArrayLength<values::Constant<'a>>;
+    type Length: ArrayLength<ExpectedConstantTy> + ArrayLength<values::Constant<'a>>;
 
-    fn tys(&self) -> GenericArray<ConstantTy, Self::Length>;
+    fn tys(&self) -> GenericArray<ExpectedConstantTy, Self::Length>;
 
     /// If the given values matches the expected values.
     fn is_match(&self, other: &GenericArray<values::Constant<'a>, Self::Length>) -> bool;
@@ -385,8 +395,8 @@ where
 {
     type Length = typenum::U1;
 
-    fn tys(&self) -> GenericArray<ConstantTy, Self::Length> {
-        generic_array::arr![ConstantTy; self.ty()]
+    fn tys(&self) -> GenericArray<ExpectedConstantTy, Self::Length> {
+        generic_array::arr![ExpectedConstantTy; self.ty()]
     }
 
     fn is_match(&self, other: &GenericArray<values::Constant<'a>, Self::Length>) -> bool {
@@ -408,11 +418,11 @@ macro_rules! impl_query_result {
         {
             type Length = count_ident_typenum!($($I),+);
 
-            fn tys(&self) -> GenericArray<ConstantTy, Self::Length> {
+            fn tys(&self) -> GenericArray<ExpectedConstantTy, Self::Length> {
                 #[allow(non_snake_case)]
                 let ($([<a_ $I>],)+) = self;
 
-                generic_array::arr![ConstantTy; $([<a_ $I>].ty()),+]
+                generic_array::arr![ExpectedConstantTy; $([<a_ $I>].ty()),+]
             }
 
             fn is_match(&self, other: &GenericArray<values::Constant<'a>, Self::Length>) -> bool {
@@ -444,59 +454,47 @@ macro_rules! impl_query_result {
 
 impl_query_result!(dummy, T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12);
 
-#[derive(Debug, Clone, Copy)]
-pub enum ValueConversionTy {
-    /// Boolean
-    Bool,
-    /// Byte slice
-    Bytes,
-    /// Number
-    Num,
-    /// Any value type
-    Any,
-}
-
 pub trait Value {
-    fn supported_ty() -> ValueConversionTy;
+    fn supported_ty() -> ExpectedConstantTy;
 }
 
 impl Value for bool {
-    fn supported_ty() -> ValueConversionTy {
-        ValueConversionTy::Bool
+    fn supported_ty() -> ExpectedConstantTy {
+        ExpectedConstantTy::Bool
     }
 }
 
 impl Value for i64 {
-    fn supported_ty() -> ValueConversionTy {
-        ValueConversionTy::Num
+    fn supported_ty() -> ExpectedConstantTy {
+        ExpectedConstantTy::Num
     }
 }
 
 impl<'a> Value for &'a [u8] {
-    fn supported_ty() -> ValueConversionTy {
-        ValueConversionTy::Bytes
+    fn supported_ty() -> ExpectedConstantTy {
+        ExpectedConstantTy::Bytes
     }
 }
 
 impl<'a> Value for &'a str {
-    fn supported_ty() -> ValueConversionTy {
-        ValueConversionTy::Bytes
+    fn supported_ty() -> ExpectedConstantTy {
+        ExpectedConstantTy::Bytes
     }
 }
 
 impl<'a> Value for values::Constant<'a> {
-    fn supported_ty() -> ValueConversionTy {
-        ValueConversionTy::Any
+    fn supported_ty() -> ExpectedConstantTy {
+        ExpectedConstantTy::Any
     }
 }
 
 pub trait TryFromConstantArray<'a>: Sized {
-    type Length: ArrayLength<ValueConversionTy> + ArrayLength<values::Constant<'a>>;
+    type Length: ArrayLength<ExpectedConstantTy> + ArrayLength<values::Constant<'a>>;
 
     type Error;
 
     /// Return the types which are required to convert from.
-    fn required_tys() -> GenericArray<ValueConversionTy, Self::Length>;
+    fn required_tys() -> GenericArray<ExpectedConstantTy, Self::Length>;
 
     fn try_from_constants(
         value: GenericArray<values::Constant<'a>, Self::Length>,
@@ -509,15 +507,15 @@ pub(crate) struct VoidResult<L> {
 
 impl<'a, L> TryFromConstantArray<'a> for VoidResult<L>
 where
-    L: ArrayLength<ValueConversionTy> + ArrayLength<values::Constant<'a>>,
+    L: ArrayLength<ExpectedConstantTy> + ArrayLength<values::Constant<'a>>,
 {
     type Length = L;
 
     type Error = Infallible;
 
-    fn required_tys() -> GenericArray<ValueConversionTy, Self::Length> {
+    fn required_tys() -> GenericArray<ExpectedConstantTy, Self::Length> {
         GenericArray::from_exact_iter(
-            core::iter::repeat(ValueConversionTy::Any).take(Self::Length::to_usize()),
+            core::iter::repeat(ExpectedConstantTy::Any).take(Self::Length::to_usize()),
         )
         .unwrap()
     }
@@ -538,8 +536,8 @@ where
 
     type Error = QueryResultError;
 
-    fn required_tys() -> GenericArray<ValueConversionTy, Self::Length> {
-        arr![ValueConversionTy; T::supported_ty()]
+    fn required_tys() -> GenericArray<ExpectedConstantTy, Self::Length> {
+        arr![ExpectedConstantTy; T::supported_ty()]
     }
 
     fn try_from_constants(
@@ -561,13 +559,13 @@ impl<'a, T, E, L> TryFromConstantArray<'a> for GenericArray<T, L>
 where
     T: TryFrom<values::Constant<'a>, Error = E> + Value,
     QueryResultError: From<E>,
-    L: ArrayLength<ValueConversionTy> + ArrayLength<values::Constant<'a>> + ArrayLength<T>,
+    L: ArrayLength<ExpectedConstantTy> + ArrayLength<values::Constant<'a>> + ArrayLength<T>,
 {
     type Length = L;
 
     type Error = QueryResultError;
 
-    fn required_tys() -> GenericArray<ValueConversionTy, Self::Length> {
+    fn required_tys() -> GenericArray<ExpectedConstantTy, Self::Length> {
         GenericArray::from_exact_iter(
             core::iter::repeat(T::supported_ty()).take(Self::Length::to_usize()),
         )
@@ -608,8 +606,8 @@ macro_rules! impl_try_from_constant_array_tuple {
 
             type Error = QueryResultError;
 
-            fn required_tys() -> GenericArray<ValueConversionTy, Self::Length> {
-                generic_array::arr![ValueConversionTy; $($I::supported_ty()),+]
+            fn required_tys() -> GenericArray<ExpectedConstantTy, Self::Length> {
+                generic_array::arr![ExpectedConstantTy; $($I::supported_ty()),+]
             }
 
             fn try_from_constants(

@@ -431,7 +431,7 @@ where
     };
 
     match ty {
-        ConstantTy::Unknown | ConstantTy::Bool => unreachable!(),
+        ConstantTy::Bool => unreachable!(),
         ConstantTy::Num => Constant::Num(i64::from_be_bytes(<[u8; 8]>::try_from(value).unwrap())),
         ConstantTy::Bytes => Constant::Bytes(value),
     }
