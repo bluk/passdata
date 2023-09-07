@@ -49,6 +49,17 @@ pub trait IntoArray<T>: Sized {
     fn into_array(self) -> GenericArray<T, Self::Length>;
 }
 
+impl<T, L> IntoArray<T> for GenericArray<T, L>
+where
+    L: ArrayLength<T>,
+{
+    type Length = L;
+
+    fn into_array(self) -> GenericArray<T, Self::Length> {
+        self
+    }
+}
+
 macro_rules! impl_into_array_single_ty {
     ($i0:ty) => {
         impl<'a> IntoArray<values::Constant<'a>> for $i0
@@ -401,6 +412,33 @@ where
 
     fn is_match<'a>(&self, other: &GenericArray<values::Constant<'a>, Self::Length<'a>>) -> bool {
         self.is_match(other[0])
+    }
+}
+
+impl<'b, T, L> QueryArgs for GenericArray<T, L>
+where
+    T: QueryArg,
+    L: ArrayLength<T> + ArrayLength<ExpectedConstantTy> + ArrayLength<values::Constant<'b>>,
+{
+    type Length<'a> = typenum::U1;
+
+    fn tys<'a>(&self) -> GenericArray<ExpectedConstantTy, Self::Length<'a>> {
+        use typenum::Unsigned;
+
+        GenericArray::from_exact_iter(
+            core::iter::repeat(self[0].ty()).take(Self::Length::to_usize()),
+        )
+        .unwrap()
+    }
+
+    fn is_match<'a>(&self, other: &GenericArray<values::Constant<'a>, Self::Length<'a>>) -> bool {
+        for (expected, actual) in self.iter().zip(other.iter()) {
+            if !expected.is_match(*actual) {
+                return false;
+            }
+        }
+
+        true
     }
 }
 
