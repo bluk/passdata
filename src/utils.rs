@@ -376,30 +376,30 @@ impl From<Infallible> for QueryResultError {
 }
 
 /// Converts data into a query result.
-pub trait QueryArgs<'a>
+pub trait QueryArgs
 where
     Self: Sized,
 {
     /// Number of arguments in the fact.
-    type Length: ArrayLength<ExpectedConstantTy> + ArrayLength<values::Constant<'a>>;
+    type Length<'a>: ArrayLength<ExpectedConstantTy> + ArrayLength<values::Constant<'a>>;
 
-    fn tys(&self) -> GenericArray<ExpectedConstantTy, Self::Length>;
+    fn tys<'a>(&self) -> GenericArray<ExpectedConstantTy, Self::Length<'a>>;
 
     /// If the given values matches the expected values.
-    fn is_match(&self, other: &GenericArray<values::Constant<'a>, Self::Length>) -> bool;
+    fn is_match<'a>(&self, other: &GenericArray<values::Constant<'a>, Self::Length<'a>>) -> bool;
 }
 
-impl<'a, T> QueryArgs<'a> for T
+impl<T> QueryArgs for T
 where
     T: QueryArg,
 {
-    type Length = typenum::U1;
+    type Length<'a> = typenum::U1;
 
-    fn tys(&self) -> GenericArray<ExpectedConstantTy, Self::Length> {
+    fn tys<'a>(&self) -> GenericArray<ExpectedConstantTy, Self::Length<'a>> {
         generic_array::arr![ExpectedConstantTy; self.ty()]
     }
 
-    fn is_match(&self, other: &GenericArray<values::Constant<'a>, Self::Length>) -> bool {
+    fn is_match<'a>(&self, other: &GenericArray<values::Constant<'a>, Self::Length<'a>>) -> bool {
         self.is_match(other[0])
     }
 }
@@ -411,21 +411,21 @@ macro_rules! impl_query_result {
 
         paste::paste! {
 
-        impl<'a, $($I),+,> QueryArgs<'a> for ($($I,)+)
+        impl<$($I),+,> QueryArgs for ($($I,)+)
             where
             $($I: QueryArg),+,
             Self: Sized
         {
-            type Length = count_ident_typenum!($($I),+);
+            type Length<'a> = count_ident_typenum!($($I),+);
 
-            fn tys(&self) -> GenericArray<ExpectedConstantTy, Self::Length> {
+            fn tys<'a>(&self) -> GenericArray<ExpectedConstantTy, Self::Length<'a>> {
                 #[allow(non_snake_case)]
                 let ($([<a_ $I>],)+) = self;
 
                 generic_array::arr![ExpectedConstantTy; $([<a_ $I>].ty()),+]
             }
 
-            fn is_match(&self, other: &GenericArray<values::Constant<'a>, Self::Length>) -> bool {
+            fn is_match<'a>(&self, other: &GenericArray<values::Constant<'a>, Self::Length<'a>>) -> bool {
                 #[allow(non_snake_case)]
                 let ($([<a_ $I>],)+) = self;
                 #[allow(non_snake_case)]

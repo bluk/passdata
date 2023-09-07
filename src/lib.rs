@@ -340,9 +340,9 @@ impl<'s> Passdata<'s> {
         args: T,
     ) -> Result<impl Iterator<Item = R> + 'a>
     where
-        T: QueryArgs<'a> + 'a,
-        R: TryFromConstantArray<'a, Length = T::Length> + 'a,
-        T::Length: ArrayLength<ExpectedConstantTy>,
+        T: QueryArgs + 'a,
+        R: TryFromConstantArray<'a, Length = T::Length<'a>> + 'a,
+        T::Length<'a>: ArrayLength<ExpectedConstantTy>,
     {
         self.schema.validate_conversions(predicate, &args.tys())?;
         self.schema
@@ -383,10 +383,10 @@ impl<'s> Passdata<'s> {
     /// If the expected types are not compatible with the types in the data.
     pub fn contains_edb<'a, T>(&'a self, pred: &str, args: T) -> Result<bool>
     where
-        T: QueryArgs<'a> + 'a,
-        T::Length: ArrayLength<ExpectedConstantTy>,
+        T: QueryArgs + 'a,
+        T::Length<'a>: ArrayLength<ExpectedConstantTy>,
     {
-        self.query_edb::<_, VoidResult<T::Length>>(pred, args)
+        self.query_edb::<_, VoidResult<T::Length<'a>>>(pred, args)
             .map(|mut values| values.next().is_some())
     }
 
@@ -399,9 +399,9 @@ impl<'s> Passdata<'s> {
     /// - If there are multiple matching facts
     pub fn query_exclusive_edb<'a, T, R>(&'a self, pred: &str, args: T) -> Result<Option<R>>
     where
-        T: QueryArgs<'a> + 'a,
-        R: TryFromConstantArray<'a, Length = T::Length> + 'a,
-        T::Length: ArrayLength<ExpectedConstantTy>,
+        T: QueryArgs + 'a,
+        R: TryFromConstantArray<'a, Length = T::Length<'a>> + 'a,
+        T::Length<'a>: ArrayLength<ExpectedConstantTy>,
     {
         let mut iter = self.query_edb(pred, args)?;
         let Some(first) = iter.next() else {
