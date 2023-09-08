@@ -291,12 +291,15 @@ impl<'s> Passdata<'s> {
         ))
     }
 
-    /// Add a fact explicitly.
+    /// Add a fact explicitly. Returns true if the fact was added; false if it already existed.
     ///
     /// # Errors
     ///
     /// Returns an error if the values do not match the expected types for the predicate.
-    pub fn add_fact<'a, T>(&mut self, predicate: &str, constants: T) -> Result<()>
+    ///
+    /// Returns an error if the fact was set as exclusive in the schema and
+    /// there is an existing non-equal fact.
+    pub fn add_fact<'a, T>(&mut self, predicate: &str, constants: T) -> Result<bool>
     where
         T: IntoArray<Constant<'a>>,
         <T as IntoArray<Constant<'a>>>::Length: ArrayLength<ConstantTy>,
@@ -324,32 +327,9 @@ impl<'s> Passdata<'s> {
             };
         }
 
-        facts::push(self.section_mut(SectionId::Edb), pred, v);
+        let is_exclusive = self.schema.is_exclusive(predicate);
 
-        Ok(())
-    }
-
-    /// Add an exclusive fact explicitly.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the values do not match the expected types for the predicate.
-    ///
-    /// If the fact already has been added, then an error is also returned.
-    pub fn add_exclusive_fact<'a, T>(&mut self, predicate: &str, constants: T) -> Result<()>
-    where
-        T: IntoArray<Constant<'a>>,
-        T::Length: ArrayLength<ExpectedConstantTy>,
-        <T as IntoArray<Constant<'a>>>::Length: ArrayLength<ConstantTy>,
-        <T as IntoArray<Constant<'a>>>::Length: ArrayLength<ConstantId>,
-    {
-        let constants = constants.into_array();
-
-        if self.edb_iter(predicate)?.next().is_some() {
-            return Err(Error::with_kind(ErrorKind::ExistingFact));
-        }
-
-        self.add_fact(predicate, constants)
+        facts::push(self.section_mut(SectionId::Edb), pred, v, is_exclusive)
     }
 
     /// Query for an explictly declared fact.
@@ -784,23 +764,25 @@ mod tests {
     fn add_exclusive_fact() -> Result<()> {
         let mut schema = Schema::new();
         schema.insert_tys("a", &[ConstantTy::Bool])?;
+        schema.set_exclusive("a")?;
         schema.insert_tys("b", &[ConstantTy::Bytes, ConstantTy::Num, ConstantTy::Bool])?;
+        schema.set_exclusive("b")?;
 
         let mut data = Passdata::with_schema(&schema);
 
-        data.add_exclusive_fact("a", true)?;
+        assert_eq!(data.add_fact("a", true), Ok(true));
+        assert_eq!(data.add_fact("a", true), Ok(false));
         assert_eq!(
-            data.add_exclusive_fact("a", true),
-            Err(Error::with_kind(ErrorKind::ExistingFact))
-        );
-        assert_eq!(
-            data.add_exclusive_fact("a", false),
+            data.add_fact("a", false),
             Err(Error::with_kind(ErrorKind::ExistingFact))
         );
 
-        data.add_exclusive_fact("b", ([1, 2, 3].as_slice(), 456, false))?;
         assert_eq!(
-            data.add_exclusive_fact("b", ([].as_slice(), 0, true)),
+            data.add_fact("b", ([1, 2, 3].as_slice(), 456, false)),
+            Ok(true)
+        );
+        assert_eq!(
+            data.add_fact("b", ([].as_slice(), 0, true)),
             Err(Error::with_kind(ErrorKind::ExistingFact))
         );
 

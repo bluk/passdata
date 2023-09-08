@@ -3,9 +3,9 @@
 //! Schemas are expected to be constant.
 
 #[cfg(all(feature = "alloc", not(feature = "std")))]
-use alloc::collections::BTreeMap;
+use alloc::collections::{BTreeMap, BTreeSet};
 #[cfg(feature = "std")]
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
     error::{Error, ErrorKind, Result},
@@ -56,6 +56,7 @@ impl ConstantTy {
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Schema<'a> {
     tys: BTreeMap<&'a str, &'a [ConstantTy]>,
+    exclusive: BTreeSet<&'a str>,
 }
 
 impl<'a> Schema<'a> {
@@ -64,6 +65,7 @@ impl<'a> Schema<'a> {
     pub const fn new() -> Self {
         Self {
             tys: BTreeMap::new(),
+            exclusive: BTreeSet::new(),
         }
     }
 
@@ -92,6 +94,29 @@ impl<'a> Schema<'a> {
         }
 
         self.tys.insert(pred, tys);
+
+        Ok(())
+    }
+
+    /// Returns true if the exclusive bit is set for a predicate.
+    #[must_use]
+    pub fn is_exclusive(&self, predicate: &str) -> bool {
+        self.exclusive.contains(predicate)
+    }
+
+    /// Sets a predicate to be an exclusive fact.
+    ///
+    /// At most one fact can be added with the given predicate.
+    ///
+    /// # Errors
+    ///
+    /// If the predicate's schema types does not exist
+    pub fn set_exclusive(&mut self, predicate: &'a str) -> Result<()> {
+        if !self.tys.contains_key(predicate) {
+            return Err(Error::with_kind(ErrorKind::MismatchSchemaTys));
+        }
+
+        self.exclusive.insert(predicate);
 
         Ok(())
     }

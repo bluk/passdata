@@ -17,8 +17,9 @@ use std::{error, vec::Vec};
 use generic_array::{ArrayLength, GenericArray};
 
 use crate::{
+    error::ErrorKind,
     values::{self, BytesId, ConstantId},
-    Constant, Section, SectionMut,
+    Constant, Error, Section, SectionMut,
 };
 
 /// An interned predicate reference.
@@ -184,7 +185,8 @@ pub(crate) fn push<N: ArrayLength<ConstantId>>(
     mut facts: SectionMut<'_>,
     pred: PredicateId,
     constants: GenericArray<ConstantId, N>,
-) {
+    is_exclusive: bool,
+) -> Result<bool, Error> {
     assert!(!constants.is_empty());
 
     facts.init(&SECTION_INIT);
@@ -234,7 +236,7 @@ pub(crate) fn push<N: ArrayLength<ConstantId>>(
 
             if is_equal {
                 // Found an equivalent term already
-                return;
+                return Ok(false);
             }
 
             len = len.checked_sub(bytes_len).unwrap();
@@ -244,9 +246,13 @@ pub(crate) fn push<N: ArrayLength<ConstantId>>(
         let len = u16::from_be_bytes([
             facts.data[pred_start_pos + 2],
             facts.data[pred_start_pos + 3],
-        ])
-        .checked_add(u16::try_from(bytes_len).unwrap())
-        .unwrap();
+        ]);
+
+        if is_exclusive && len > 0 {
+            return Err(Error::with_kind(ErrorKind::ExistingFact));
+        }
+
+        let len = len.checked_add(u16::try_from(bytes_len).unwrap()).unwrap();
         let len_bytes = len.to_be_bytes();
         facts.data[pred_start_pos + 2] = len_bytes[0];
         facts.data[pred_start_pos + 3] = len_bytes[1];
@@ -264,7 +270,7 @@ pub(crate) fn push<N: ArrayLength<ConstantId>>(
         facts.end += bytes_len;
         facts.update_len();
 
-        return;
+        return Ok(true);
     }
 
     debug_assert_eq!(pos, facts.end);
@@ -290,6 +296,8 @@ pub(crate) fn push<N: ArrayLength<ConstantId>>(
     );
     facts.end += bytes_len;
     facts.update_len();
+
+    Ok(true)
 }
 
 /// Errors returned when using [`FactTerms`] methods.
