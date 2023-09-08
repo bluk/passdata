@@ -25,6 +25,7 @@ typenum = { version  = "1.16.0", default-features = false }
 
 [dev-dependencies]
 lazy_static = "1.4.0"
+proptest = "1.2.0"
 
 [features]
 default = ["std"]

@@ -429,6 +429,7 @@ mod tests {
     use std::{string::String, vec};
 
     use generic_array::arr;
+    use proptest::prelude::*;
 
     use crate::utils::{AnyBool, AnyBytes, AnyNum, AnyStr};
 
@@ -787,5 +788,70 @@ mod tests {
         );
 
         Ok(())
+    }
+
+    #[cfg(feature = "std")]
+    proptest! {
+        #[allow(clippy::ignored_unit_patterns)]
+        #[test]
+        fn add_single_num(predicate in ".{1,1024}", n in proptest::num::i64::ANY) {
+            let mut schema = Schema::new();
+            schema.insert_tys(&predicate, &[ConstantTy::Num])?;
+
+            let mut pd = Passdata::with_schema(&schema);
+
+            prop_assert!(!pd.contains_edb(&predicate, n)?);
+            prop_assert!(!pd.contains_edb(&predicate, (n,))?);
+            prop_assert!(!pd.contains_edb(&predicate, arr![i64; n])?);
+
+            pd.add_fact(&predicate, n)?;
+
+            prop_assert!(pd.contains_edb(&predicate, n)?);
+            prop_assert!(pd.contains_edb(&predicate, (n,))?);
+            prop_assert!(pd.contains_edb(&predicate, arr![i64; n])?);
+        }
+
+        #[allow(clippy::ignored_unit_patterns)]
+        #[test]
+        fn add_single_string(predicate in ".{1,1024}", s in ".{0,1024}") {
+            let mut schema = Schema::new();
+            schema.insert_tys(&predicate, &[ConstantTy::Bytes])?;
+
+            let mut pd = Passdata::with_schema(&schema);
+
+            prop_assert!(!pd.contains_edb(&predicate, s.as_str())?);
+            prop_assert!(!pd.contains_edb(&predicate, s.clone())?);
+            prop_assert!(!pd.contains_edb(&predicate, (s.clone(),))?);
+            prop_assert!(!pd.contains_edb(&predicate, arr![&str; &s])?);
+
+            pd.add_fact(&predicate, s.as_str())?;
+
+            prop_assert!(pd.contains_edb(&predicate, s.as_str())?);
+            prop_assert!(pd.contains_edb(&predicate, s.clone())?);
+            prop_assert!(pd.contains_edb(&predicate, (s.clone(),))?);
+            prop_assert!(pd.contains_edb(&predicate, arr![&str; &s])?);
+        }
+
+
+        #[allow(clippy::ignored_unit_patterns)]
+        #[test]
+        fn add_single_byte_slice(predicate in ".{1,1024}", b in proptest::collection::vec(proptest::num::u8::ANY, 0..4096)) {
+            let mut schema = Schema::new();
+            schema.insert_tys(&predicate, &[ConstantTy::Bytes])?;
+
+            let mut pd = Passdata::with_schema(&schema);
+
+            prop_assert!(!pd.contains_edb(&predicate, b.as_slice())?);
+            prop_assert!(!pd.contains_edb(&predicate, b.clone())?);
+            prop_assert!(!pd.contains_edb(&predicate, (b.clone(),))?);
+            prop_assert!(!pd.contains_edb(&predicate, arr![&[u8]; &b])?);
+
+            pd.add_fact(&predicate, b.as_slice())?;
+
+            prop_assert!(pd.contains_edb(&predicate, b.as_slice())?);
+            prop_assert!(pd.contains_edb(&predicate, b.clone())?);
+            prop_assert!(pd.contains_edb(&predicate, (b.clone(),))?);
+            prop_assert!(pd.contains_edb(&predicate, arr![&[u8]; &b])?);
+        }
     }
 }
