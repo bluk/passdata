@@ -61,6 +61,15 @@ pub use schema::{ConstantTy, Schema};
 pub use utils::{AnyBool, AnyBytes, AnyConstant, AnyNum, AnyStr};
 pub use values::Constant;
 
+/// Preamble for the data
+pub const MAGIC_NUMBER: [u8; 4] = [b'p', b'a', b's', b's'];
+
+/// Version of the data
+pub const VERSION: [u8; 4] = [0x01, 0x00, 0x00, 0x00];
+
+// Needs to match the MAGIC_NUMBER and VERSION combined
+const EMPTY_PD: [u8; 8] = [b'p', b'a', b's', b's', 0x01, 0x00, 0x00, 0x00];
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SectionId {
     Unknown,
@@ -186,7 +195,9 @@ impl<'s> Passdata<'s> {
     /// Returns the underlying encoded data.
     #[must_use]
     #[inline]
-    pub fn into_inner(self) -> Vec<u8> {
+    pub fn into_inner(mut self) -> Vec<u8> {
+        self.init_header();
+
         self.data
     }
 
@@ -194,16 +205,27 @@ impl<'s> Passdata<'s> {
     #[must_use]
     #[inline]
     pub fn as_slice(&self) -> &[u8] {
-        &self.data
+        if self.data.is_empty() {
+            &EMPTY_PD
+        } else {
+            &self.data
+        }
+    }
+
+    fn init_header(&mut self) {
+        if self.data.is_empty() {
+            self.data.reserve(8);
+            self.data.extend(MAGIC_NUMBER);
+            self.data.extend(VERSION);
+        }
     }
 
     fn section_rng(&self, section: SectionId) -> Option<(usize, usize)> {
-        let mut offset = 0;
+        let mut offset = EMPTY_PD.len();
         loop {
-            if offset == self.data.len() {
+            if offset >= self.data.len() {
                 return None;
             }
-            debug_assert!(offset < self.data.len());
 
             let len = usize::from(u16::from_be_bytes([
                 self.data[offset + 1],
@@ -309,6 +331,8 @@ impl<'s> Passdata<'s> {
 
         let tys = constants.clone().map(ConstantTy::from);
         self.schema.validate_tys(predicate, &tys)?;
+
+        self.init_header();
 
         let mut v: GenericArray<ConstantId, T::Length> = GenericArray::default();
 
@@ -853,5 +877,37 @@ mod tests {
             prop_assert!(pd.contains_edb(&predicate, (b.clone(),))?);
             prop_assert!(pd.contains_edb(&predicate, arr![&[u8]; &b])?);
         }
+
+        #[allow(clippy::ignored_unit_patterns)]
+        #[test]
+        fn data_header_exists(predicate in ".{1,1024}", b in proptest::collection::vec(proptest::num::u8::ANY, 0..4096)) {
+            let mut schema = Schema::new();
+            schema.insert_tys(&predicate, &[ConstantTy::Bytes])?;
+
+            let mut pd = Passdata::with_schema(&schema);
+
+            pd.add_fact(&predicate, b.as_slice())?;
+
+            assert_eq!(pd.as_slice()[..EMPTY_PD.len()], EMPTY_PD);
+            assert_eq!(pd.into_inner()[..EMPTY_PD.len()], EMPTY_PD);
+        }
+    }
+
+    #[test]
+    fn empty_pd_correct() {
+        assert_eq!(EMPTY_PD.len(), MAGIC_NUMBER.len() + VERSION.len());
+        assert_eq!(EMPTY_PD[0..MAGIC_NUMBER.len()], MAGIC_NUMBER);
+        assert_eq!(
+            EMPTY_PD[MAGIC_NUMBER.len()..MAGIC_NUMBER.len() + VERSION.len()],
+            VERSION
+        );
+    }
+
+    #[test]
+    fn empty_data_header_exists() {
+        let schema = Schema::new();
+        let pd = Passdata::with_schema(&schema);
+        assert_eq!(pd.as_slice(), EMPTY_PD);
+        assert_eq!(pd.into_inner(), EMPTY_PD);
     }
 }
