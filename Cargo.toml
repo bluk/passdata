@@ -15,6 +15,7 @@ license = "MIT OR Apache-2.0"
 name = "passdata"
 repository = "https://github.com/bluk/passdata"
 readme = "README.md"
+rust-version = "1.66.1"
 version = "0.0.2"
 
 [dependencies]

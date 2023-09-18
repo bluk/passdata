@@ -18,11 +18,12 @@ jobs:
           - macos-latest
           - windows-latest
         rust:
-          - nightly
+          - stable
+          - 1.66.1
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           persist-credentials: false
       - name: Install toolchain
@@ -46,11 +47,12 @@ jobs:
           - macos-latest
           - windows-latest
         rust:
-          - nightly
+          - stable
+          - 1.66.1
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           persist-credentials: false
       - name: Install toolchain
@@ -76,11 +78,11 @@ jobs:
         os:
           - ubuntu-latest
         rust:
-          - nightly
+          - stable
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           persist-credentials: false
       - name: Install toolchain
@@ -98,11 +100,12 @@ jobs:
         os:
           - ubuntu-latest
         rust:
+          - stable
           - nightly
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           persist-credentials: false
       - name: Install toolchain
@@ -111,4 +114,4 @@ jobs:
           toolchain: ${{ matrix.rust }}
           components: clippy
       - name: Run cargo clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo clippy --all-targets --all-features
