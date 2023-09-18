@@ -181,7 +181,7 @@ where
 }
 
 /// Pushes a new tuple value for a predicate.
-pub(crate) fn push<N: ArrayLength<ConstantId>>(
+pub(crate) fn push<N: ArrayLength>(
     mut facts: SectionMut<'_>,
     pred: PredicateId,
     constants: GenericArray<ConstantId, N>,

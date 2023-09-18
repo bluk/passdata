@@ -36,7 +36,7 @@ use alloc::vec::Vec;
 use core::iter;
 #[cfg(feature = "std")]
 use std::vec::Vec;
-use utils::{ExpectedConstantTy, TryFromConstantArray, VoidResult};
+use utils::{TryFromConstantArray, VoidResult};
 
 use either::Either;
 use generic_array::{functional::FunctionalSequence, ArrayLength, GenericArray};
@@ -324,8 +324,7 @@ impl<'s> Passdata<'s> {
     pub fn add_fact<'a, T>(&mut self, predicate: &str, constants: T) -> Result<bool>
     where
         T: IntoArray<Constant<'a>>,
-        <T as IntoArray<Constant<'a>>>::Length: ArrayLength<ConstantTy>,
-        <T as IntoArray<Constant<'a>>>::Length: ArrayLength<ConstantId>,
+        <T as IntoArray<Constant<'a>>>::Length: ArrayLength,
     {
         let constants = constants.into_array();
 
@@ -369,7 +368,7 @@ impl<'s> Passdata<'s> {
     where
         T: QueryArgs + 'a,
         R: TryFromConstantArray<'a, Length = T::Length<'a>> + 'a,
-        T::Length<'a>: ArrayLength<ExpectedConstantTy>,
+        T::Length<'a>: ArrayLength,
     {
         self.schema.validate_conversions(predicate, &args.tys())?;
         self.schema
@@ -411,7 +410,7 @@ impl<'s> Passdata<'s> {
     pub fn contains_edb<'a, T>(&'a self, pred: &str, args: T) -> Result<bool>
     where
         T: QueryArgs + 'a,
-        T::Length<'a>: ArrayLength<ExpectedConstantTy>,
+        T::Length<'a>: ArrayLength,
     {
         self.query_edb::<_, VoidResult<T::Length<'a>>>(pred, args)
             .map(|mut values| values.next().is_some())
@@ -428,7 +427,7 @@ impl<'s> Passdata<'s> {
     where
         T: QueryArgs + 'a,
         R: TryFromConstantArray<'a, Length = T::Length<'a>> + 'a,
-        T::Length<'a>: ArrayLength<ExpectedConstantTy>,
+        T::Length<'a>: ArrayLength,
     {
         let mut iter = self.query_edb(pred, args)?;
         let Some(first) = iter.next() else {
@@ -653,9 +652,11 @@ mod tests {
         );
         assert_eq!(
             data.query_exclusive_edb("b", ("xyz", 1234, AnyBool)),
-            Ok(Some(
-                arr![Constant<'_>; Constant::from("xyz"), Constant::from(1234), Constant::from(false)]
-            ))
+            Ok(Some(arr![
+                Constant::from("xyz"),
+                Constant::from(1234),
+                Constant::from(false)
+            ]))
         );
         assert_eq!(
             data.query_exclusive_edb::<_, (&str, i64, bool)>("b", ("xyz", AnyNum, AnyBool)),
@@ -684,7 +685,7 @@ mod tests {
         );
         assert_eq!(
             data.query_exclusive_edb("d", AnyBytes),
-            Ok(Some(arr![&[u8]; "xyz".as_bytes()]))
+            Ok(Some(arr!["xyz".as_bytes()]))
         );
         assert_eq!(data.query_exclusive_edb::<_, &[u8]>("d", "abc"), Ok(None));
         assert_eq!(data.query_exclusive_edb("d", "xyz"), Ok(Some("xyz")));
@@ -826,13 +827,13 @@ mod tests {
 
             prop_assert!(!pd.contains_edb(&predicate, n)?);
             prop_assert!(!pd.contains_edb(&predicate, (n,))?);
-            prop_assert!(!pd.contains_edb(&predicate, arr![i64; n])?);
+            prop_assert!(!pd.contains_edb(&predicate, arr![n])?);
 
             pd.add_fact(&predicate, n)?;
 
             prop_assert!(pd.contains_edb(&predicate, n)?);
             prop_assert!(pd.contains_edb(&predicate, (n,))?);
-            prop_assert!(pd.contains_edb(&predicate, arr![i64; n])?);
+            prop_assert!(pd.contains_edb(&predicate, arr![n])?);
         }
 
         #[allow(clippy::ignored_unit_patterns)]
@@ -846,14 +847,14 @@ mod tests {
             prop_assert!(!pd.contains_edb(&predicate, s.as_str())?);
             prop_assert!(!pd.contains_edb(&predicate, s.clone())?);
             prop_assert!(!pd.contains_edb(&predicate, (s.clone(),))?);
-            prop_assert!(!pd.contains_edb(&predicate, arr![&str; &s])?);
+            prop_assert!(!pd.contains_edb(&predicate, arr![&s])?);
 
             pd.add_fact(&predicate, s.as_str())?;
 
             prop_assert!(pd.contains_edb(&predicate, s.as_str())?);
             prop_assert!(pd.contains_edb(&predicate, s.clone())?);
             prop_assert!(pd.contains_edb(&predicate, (s.clone(),))?);
-            prop_assert!(pd.contains_edb(&predicate, arr![&str; &s])?);
+            prop_assert!(pd.contains_edb(&predicate, arr![&s])?);
         }
 
 
@@ -868,14 +869,14 @@ mod tests {
             prop_assert!(!pd.contains_edb(&predicate, b.as_slice())?);
             prop_assert!(!pd.contains_edb(&predicate, b.clone())?);
             prop_assert!(!pd.contains_edb(&predicate, (b.clone(),))?);
-            prop_assert!(!pd.contains_edb(&predicate, arr![&[u8]; &b])?);
+            prop_assert!(!pd.contains_edb(&predicate, arr![&b])?);
 
             pd.add_fact(&predicate, b.as_slice())?;
 
             prop_assert!(pd.contains_edb(&predicate, b.as_slice())?);
             prop_assert!(pd.contains_edb(&predicate, b.clone())?);
             prop_assert!(pd.contains_edb(&predicate, (b.clone(),))?);
-            prop_assert!(pd.contains_edb(&predicate, arr![&[u8]; &b])?);
+            prop_assert!(pd.contains_edb(&predicate, arr![&b])?);
         }
 
         #[allow(clippy::ignored_unit_patterns)]

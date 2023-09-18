@@ -44,7 +44,7 @@ pub enum ExpectedConstantTy {
 /// Converts data into an array.
 pub trait IntoArray<T>: Sized {
     /// Length of the generic array.
-    type Length: ArrayLength<T>;
+    type Length: ArrayLength;
 
     /// Converts `self` into an array.
     fn into_array(self) -> GenericArray<T, Self::Length>;
@@ -52,7 +52,7 @@ pub trait IntoArray<T>: Sized {
 
 impl<T, L> IntoArray<T> for GenericArray<T, L>
 where
-    L: ArrayLength<T>,
+    L: ArrayLength,
 {
     type Length = L;
 
@@ -237,6 +237,19 @@ impl QueryArg for String {
     }
 }
 
+impl<'a> QueryArg for &'a String {
+    fn ty(&self) -> ExpectedConstantTy {
+        ExpectedConstantTy::Bytes
+    }
+
+    fn is_match(&self, other: values::Constant<'_>) -> bool {
+        match other {
+            crate::Constant::Bytes(other) => self.as_bytes() == other,
+            crate::Constant::Bool(_) | crate::Constant::Num(_) => false,
+        }
+    }
+}
+
 impl<'b> QueryArg for Cow<'b, str> {
     fn ty(&self) -> ExpectedConstantTy {
         ExpectedConstantTy::Bytes
@@ -264,6 +277,19 @@ impl<'b> QueryArg for &'b [u8] {
 }
 
 impl QueryArg for Vec<u8> {
+    fn ty(&self) -> ExpectedConstantTy {
+        ExpectedConstantTy::Bytes
+    }
+
+    fn is_match(&self, other: values::Constant<'_>) -> bool {
+        match other {
+            crate::Constant::Bytes(other) => *self == other,
+            crate::Constant::Bool(_) | crate::Constant::Num(_) => false,
+        }
+    }
+}
+
+impl<'a> QueryArg for &'a Vec<u8> {
     fn ty(&self) -> ExpectedConstantTy {
         ExpectedConstantTy::Bytes
     }
@@ -393,7 +419,7 @@ where
     Self: Sized,
 {
     /// Number of arguments in the fact.
-    type Length<'a>: ArrayLength<ExpectedConstantTy> + ArrayLength<values::Constant<'a>>;
+    type Length<'a>: ArrayLength;
 
     fn tys<'a>(&self) -> GenericArray<ExpectedConstantTy, Self::Length<'a>>;
 
@@ -408,7 +434,7 @@ where
     type Length<'a> = typenum::U1;
 
     fn tys<'a>(&self) -> GenericArray<ExpectedConstantTy, Self::Length<'a>> {
-        generic_array::arr![ExpectedConstantTy; self.ty()]
+        generic_array::arr![self.ty()]
     }
 
     fn is_match<'a>(&self, other: &GenericArray<values::Constant<'a>, Self::Length<'a>>) -> bool {
@@ -416,20 +442,18 @@ where
     }
 }
 
-impl<'b, T, L> QueryArgs for GenericArray<T, L>
+impl<T, L> QueryArgs for GenericArray<T, L>
 where
     T: QueryArg,
-    L: ArrayLength<T> + ArrayLength<ExpectedConstantTy> + ArrayLength<values::Constant<'b>>,
+    L: ArrayLength,
 {
     type Length<'a> = typenum::U1;
 
     fn tys<'a>(&self) -> GenericArray<ExpectedConstantTy, Self::Length<'a>> {
         use typenum::Unsigned;
 
-        GenericArray::from_exact_iter(
-            core::iter::repeat(self[0].ty()).take(Self::Length::to_usize()),
-        )
-        .unwrap()
+        GenericArray::try_from_iter(core::iter::repeat(self[0].ty()).take(Self::Length::to_usize()))
+            .unwrap()
     }
 
     fn is_match<'a>(&self, other: &GenericArray<values::Constant<'a>, Self::Length<'a>>) -> bool {
@@ -461,7 +485,7 @@ macro_rules! impl_query_result {
                 #[allow(non_snake_case)]
                 let ($([<a_ $I>],)+) = self;
 
-                generic_array::arr![ExpectedConstantTy; $([<a_ $I>].ty()),+]
+                generic_array::arr![$([<a_ $I>].ty()),+]
             }
 
             fn is_match<'a>(&self, other: &GenericArray<values::Constant<'a>, Self::Length<'a>>) -> bool {
@@ -521,6 +545,12 @@ impl Value for Vec<u8> {
     }
 }
 
+impl<'a> Value for &'a Vec<u8> {
+    fn supported_ty() -> ExpectedConstantTy {
+        ExpectedConstantTy::Bytes
+    }
+}
+
 impl<'a> Value for Cow<'a, [u8]> {
     fn supported_ty() -> ExpectedConstantTy {
         ExpectedConstantTy::Bytes
@@ -539,6 +569,12 @@ impl Value for String {
     }
 }
 
+impl<'a> Value for &'a String {
+    fn supported_ty() -> ExpectedConstantTy {
+        ExpectedConstantTy::Bytes
+    }
+}
+
 impl<'a> Value for Cow<'a, str> {
     fn supported_ty() -> ExpectedConstantTy {
         ExpectedConstantTy::Bytes
@@ -552,7 +588,7 @@ impl<'a> Value for values::Constant<'a> {
 }
 
 pub trait TryFromConstantArray<'a>: Sized {
-    type Length: ArrayLength<ExpectedConstantTy> + ArrayLength<values::Constant<'a>>;
+    type Length: ArrayLength;
 
     type Error;
 
@@ -570,14 +606,14 @@ pub(crate) struct VoidResult<L> {
 
 impl<'a, L> TryFromConstantArray<'a> for VoidResult<L>
 where
-    L: ArrayLength<ExpectedConstantTy> + ArrayLength<values::Constant<'a>>,
+    L: ArrayLength,
 {
     type Length = L;
 
     type Error = Infallible;
 
     fn required_tys() -> GenericArray<ExpectedConstantTy, Self::Length> {
-        GenericArray::from_exact_iter(
+        GenericArray::try_from_iter(
             core::iter::repeat(ExpectedConstantTy::Any).take(Self::Length::to_usize()),
         )
         .unwrap()
@@ -600,7 +636,7 @@ where
     type Error = QueryResultError;
 
     fn required_tys() -> GenericArray<ExpectedConstantTy, Self::Length> {
-        arr![ExpectedConstantTy; T::supported_ty()]
+        arr![T::supported_ty()]
     }
 
     fn try_from_constants(
@@ -622,14 +658,14 @@ impl<'a, T, E, L> TryFromConstantArray<'a> for GenericArray<T, L>
 where
     T: TryFrom<values::Constant<'a>, Error = E> + Value,
     QueryResultError: From<E>,
-    L: ArrayLength<ExpectedConstantTy> + ArrayLength<values::Constant<'a>> + ArrayLength<T>,
+    L: ArrayLength,
 {
     type Length = L;
 
     type Error = QueryResultError;
 
     fn required_tys() -> GenericArray<ExpectedConstantTy, Self::Length> {
-        GenericArray::from_exact_iter(
+        GenericArray::try_from_iter(
             core::iter::repeat(T::supported_ty()).take(Self::Length::to_usize()),
         )
         .unwrap()
@@ -683,7 +719,7 @@ where
             ty: PhantomData,
         };
 
-        if let Some(arr) = GenericArray::from_exact_iter(iter) {
+        if let Ok(arr) = GenericArray::try_from_iter(iter) {
             return Ok(arr);
         }
 
@@ -712,7 +748,7 @@ macro_rules! impl_try_from_constant_array_tuple {
             type Error = QueryResultError;
 
             fn required_tys() -> GenericArray<ExpectedConstantTy, Self::Length> {
-                generic_array::arr![ExpectedConstantTy; $($I::supported_ty()),+]
+                generic_array::arr![$($I::supported_ty()),+]
             }
 
             fn try_from_constants(
